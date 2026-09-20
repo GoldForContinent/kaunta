@@ -98,6 +98,7 @@ export async function requireAuth(ctx) {
     return json({ error: 'Session expired — log in again' }, 401);
   }
   ctx.user = { id: sess.id, email: sess.email, name: sess.name, role: sess.role, bar_id: sess.bar_id };
+  if (ctx.user.role === 'admin') { ctx.bar = null; return null; }
   if (!ctx.user.bar_id) return json({ error: 'No bar attached to this account' }, 403);
   ctx.bar = await ctx.DB.prepare('SELECT * FROM bars WHERE id = ?').bind(ctx.user.bar_id).first();
   if (!ctx.bar) return json({ error: 'Bar not found' }, 404);

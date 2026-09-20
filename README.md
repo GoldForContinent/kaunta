@@ -95,8 +95,10 @@ not stored — so it can never drift out of date.
 ```
 pubmanager/
 ├─ public/              ★ the website (what Cloudflare Pages serves)
+│  ├─ index.html           Marketing homepage (hero, features, pricing, FAQ)
 │  ├─ kaunta.html          Counter app (markup + JavaScript) — used by staff, PWA entry
 │  ├─ owner.html           Owner dashboard (login, live summary, pay)
+│  ├─ admin.html           Systems console (operator only: bars, renews, payments, announcements)
 │  ├─ sw.js                Service worker: caches the app for offline, network-first pages
 │  ├─ manifest.webmanifest PWA manifest (name, icons, start_url, standalone)
 │  └─ icon.svg / icon-*.png  App icons (192, 512, maskable)
@@ -111,8 +113,10 @@ pubmanager/
       ├─ sync.js        /api/op + /api/sync (offline queue replay + seq pull), subOf()
       ├─ summary.js     /api/summary (owner dashboard single pull)
       ├─ billing.js     M-Pesa: payInfo / payRequest / payCallback / payVerify
+      ├─ admin.js       /api/admin/* — stats, bars, renew, status, price, payments, announcements
       ├─ util.js        json(), CORS, uuid, token, PBKDF2 password hash, subState()
-      └─ 0001_init.sql  D1 schema (migration #1)
+      ├─ 0001_init.sql  D1 schema (migration #1)
+      └─ 0002_announcements.sql  Global announcements table (migration #2)
 ```
 
 ---
@@ -131,6 +135,7 @@ pubmanager/
 | `sales` | Every sale row |
 | `debts` / `regs` | "Deni" balances and the regulars who owe them |
 | `bar_meta` | Shift-open timestamp, last-sync time |
+| `announcements` | Global broadcasts shown in every bar's app (`bar_id NULL` = all bars) |
 
 The full file is `server/src/0001_init.sql`.
 
@@ -154,6 +159,16 @@ public routes below requires it.
 | `POST /api/pay/request` | ✔ (owner) | Start payment | STK push, or returns manual steps |
 | `POST /api/pay/callback` | — | Safaricom webhook callback | Public, from M-Pesa |
 | `POST /api/pay/verify` | ✔ (owner) | Verify a manual M-Pesa code | Idempotent per `mpesa_ref` |
+| `GET /api/announcements` | — | Latest **active global announcement** | Public; every app reads it |
+| `GET /api/admin/stats` | ✔ (admin) | Platform overview: subscription counts, revenue, today | Role-gated to `admin` |
+| `GET /api/admin/bars?q=` | ✔ (admin) | Bars directory with search + subscription state | × |
+| `POST /api/admin/renew` | ✔ (admin) | Gift days to a bar (`bar_id`, `days`) | Extends from now / period end |
+| `POST /api/admin/status` | ✔ (admin) | `trial` / `activate` / `suspend` a bar | × |
+| `POST /api/admin/price` | ✔ (admin) | Change a bar's monthly price (`price_ksh`) | × |
+| `GET /api/admin/payments?n=` | ✔ (admin) | Payments ledger across all bars | × |
+| `GET /api/admin/announcements` | ✔ (admin) | List announcements | × |
+| `POST /api/admin/announce` | ✔ (admin) | Post a global announcement (`body`) | Shows in every app |
+| `POST /api/admin/announce/delete` | ✔ (admin) | Delete an announcement (`id`) | × |
 | `GET /health` | — | Liveness probe | |
 
 ---

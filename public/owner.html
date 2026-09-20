@@ -90,6 +90,11 @@ main{padding:16px}
 .banner.warn{background:linear-gradient(180deg,rgba(255,92,56,.08),transparent);border-color:rgba(255,92,56,.35)}
 .banner b{font-size:13.5px}
 .banner p{font-size:11.5px;color:var(--dim);margin-top:2px}
+#announce{margin:0 16px 14px;position:relative}
+#announce.hidden{display:none}
+#announce .at{display:flex;align-items:center;gap:6px;font-size:9.5px;font-weight:800;letter-spacing:1.8px;color:var(--gold);text-transform:uppercase;margin-bottom:4px}
+#announce .ab{font-size:13px;line-height:1.55;color:var(--paper);padding-right:26px}
+#announce .ax{position:absolute;top:10px;right:12px;width:26px;height:26px;border:none;border-radius:8px;background:rgba(255,255,255,.06);color:var(--dim);font-size:16px;cursor:pointer;line-height:1}
 .overlay{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto;background:rgba(0,0,0,.7);backdrop-filter:blur(4px)}
 .ov-card{width:100%;max-width:420px;background:linear-gradient(180deg,#1a1d15,#12140f);border:1px solid var(--line2);border-radius:22px;padding:24px 20px}
 .ov-card h2{font-family:var(--serif);font-size:24px;margin-bottom:6px}
@@ -116,6 +121,7 @@ input:focus{border-color:var(--gold)}
     <div class="brand"><span id="barName">Kaunta</span><small>Owner · Bar Ledger</small></div>
     <div class="gear" onclick="logout()" title="Log out">&#10008;</div>
   </div></header>
+  <div id="announce" class="hidden"></div>
   <main id="main" class="hidden">
     <div class="tools"><span class="pill2" id="netPill">…</span><span class="pill2" id="subPill">…</span></div>
     <div class="hero">
@@ -230,11 +236,30 @@ async function bootDash(){
   loadSummary();
   setInterval(loadSummary,15000);
   window.addEventListener('online',()=>loadSummary());
+  loadAnnounce();
 }
 function nowPill(){
   const el=document.getElementById('netPill');
   el.textContent=navigator.onLine?'● Online':'● Offline';
   el.className='pill2 '+(navigator.onLine?'ok':'warn');
+}
+/* ---- global announcement banner (broadcast by the systems admin) ---- */
+function esc(s){ return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+let annKey='';
+async function loadAnnounce(){
+  if(!navigator.onLine) return;
+  const el=document.getElementById('announce'); if(!el) return;
+  const r=await api('/api/announcements','');
+  if(!r.ok||!r.data.ok){ el.classList.add('hidden'); return; }
+  const key='kaunta_announce_'+r.data.created_at;
+  if(localStorage.getItem('kaunta_announce')===key){ el.classList.add('hidden'); return; }
+  annKey=key;
+  el.innerHTML='<div class="banner"><div><div class="at"><b>Announcement</b></div><div class="ab">'+esc(r.data.body)+'</div></div><button class="ax" onclick="ownerDismissAnnounce()">&times;</button></div>';
+  el.classList.remove('hidden');
+}
+function ownerDismissAnnounce(){
+  if(annKey) localStorage.setItem('kaunta_announce',annKey);
+  document.getElementById('announce').classList.add('hidden');
 }
 
 async function loadSummary(){
@@ -410,6 +435,7 @@ window.addEventListener('beforeunload',()=>{});
 
 (function boot(){
   nowPill();
+  loadAnnounce();
   if(TOKEN){ bootDash(); } else { document.getElementById('gate').classList.remove('hidden'); document.getElementById('apiNote').textContent='Server: '+API_BASE; }
 })();
 </script>

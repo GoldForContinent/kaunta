@@ -1,7 +1,9 @@
-const CACHE = 'kaunta-v2';
+const CACHE = 'kaunta-v3';
 const ASSETS = [
+  './index.html',
   './kaunta.html',
   './owner.html',
+  './admin.html',
   './manifest.webmanifest',
   './icon.svg',
   './icon-192.png',

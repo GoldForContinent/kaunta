@@ -5,6 +5,10 @@ import { register, login, logout, requireAuth } from './auth.js';
 import { syncHandler, opHandler } from './sync.js';
 import { summaryHandler } from './summary.js';
 import { payRequest, payCallback, payVerify, payInfo } from './billing.js';
+import {
+  adminStats, adminBars, adminRenew, adminStatus, adminPrice, adminPayments,
+  adminAnnouncements, adminAnnounce, adminAnnounceDelete, publicAnnouncement,
+} from './admin.js';
 
 async function readBody(req) {
   try { return await req.json(); } catch (e) { return {}; }
@@ -38,6 +42,9 @@ export default {
       if (url.pathname === '/api/pay/callback' && req.method === 'POST') {
         return payCallback(env, await req.text());
       }
+      if (url.pathname === '/api/announcements' && req.method === 'GET') {
+        return withCors(req, await publicAnnouncement(env));
+      }
       if (url.pathname === '/health') {
         return ok({ ok: true, ts: Date.now() });
       }
@@ -58,7 +65,7 @@ export default {
         return ok({
           ok: true,
           user: ctx.user,
-          bar: { id: ctx.bar.id, name: ctx.bar.name, slug: ctx.bar.slug, join_code: ctx.bar.join_code },
+          bar: ctx.bar ? { id: ctx.bar.id, name: ctx.bar.name, slug: ctx.bar.slug, join_code: ctx.bar.join_code } : null,
         });
       }
       if (p === '/api/sync' && req.method === 'POST') {
@@ -78,6 +85,35 @@ export default {
       }
       if (p === '/api/pay/verify' && req.method === 'POST') {
         return withCors(req, await payVerify(env, ctx));
+      }
+
+      // Systems admin routes (guarded by role === 'admin' inside each handler)
+      if (p === '/api/admin/stats' && req.method === 'GET') {
+        return withCors(req, await adminStats(env, ctx));
+      }
+      if (p === '/api/admin/bars' && req.method === 'GET') {
+        return withCors(req, await adminBars(env, ctx, url.searchParams));
+      }
+      if (p === '/api/admin/renew' && req.method === 'POST') {
+        return withCors(req, await adminRenew(env, ctx));
+      }
+      if (p === '/api/admin/status' && req.method === 'POST') {
+        return withCors(req, await adminStatus(env, ctx));
+      }
+      if (p === '/api/admin/price' && req.method === 'POST') {
+        return withCors(req, await adminPrice(env, ctx));
+      }
+      if (p === '/api/admin/payments' && req.method === 'GET') {
+        return withCors(req, await adminPayments(env, ctx, url.searchParams));
+      }
+      if (p === '/api/admin/announcements' && req.method === 'GET') {
+        return withCors(req, await adminAnnouncements(env, ctx));
+      }
+      if (p === '/api/admin/announce' && req.method === 'POST') {
+        return withCors(req, await adminAnnounce(env, ctx));
+      }
+      if (p === '/api/admin/announce/delete' && req.method === 'POST') {
+        return withCors(req, await adminAnnounceDelete(env, ctx));
       }
 
       return ok({ error: 'Not found' }, 404);

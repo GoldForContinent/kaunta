@@ -154,6 +154,16 @@ main{padding:18px 16px 30px;position:relative;z-index:2}
 .alert h4{font-size:13.5px;margin-bottom:3px;font-weight:700}
 .alert p{font-size:12px;color:var(--dim);line-height:1.55}
 
+/* ============ announcement banner (from systems admin) ============ */
+#announce{padding:10px 16px 0}
+#announce.hidden{display:none}
+.ann{position:relative;display:flex;align-items:flex-start;gap:10px;border-radius:14px;padding:13px 14px;
+  border:1px solid rgba(233,185,92,.35);background:linear-gradient(180deg,rgba(233,185,92,.12),rgba(233,185,92,.02));
+  box-shadow:0 8px 22px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.06)}
+.ann .at{display:flex;align-items:center;gap:6px;font-size:9.5px;font-weight:800;letter-spacing:1.8px;color:var(--gold);text-transform:uppercase;margin-bottom:4px}
+.ann .ab{font-size:13px;line-height:1.55;color:var(--paper)}
+.ann .ax{position:absolute;top:8px;right:10px;width:26px;height:26px;border:none;border-radius:8px;background:rgba(255,255,255,.06);color:var(--dim);font-size:16px;cursor:pointer;line-height:1}
+
 /* ============ heat strip ============ */
 .heat{display:flex;align-items:flex-end;gap:4px;height:34px;margin-top:6px}
 .heat i{flex:1;border-radius:3px 3px 0 0;background:rgba(233,185,92,.16);position:relative;min-height:3px}
@@ -492,6 +502,8 @@ nav{
       <button class="gear" onclick="openSettings()"><svg class="ic"><use href="#i-gear"/></svg></button>
     </div>
   </header>
+
+  <div id="announce" class="hidden"></div>
 
   <main>
     <!-- DASH -->
@@ -887,8 +899,26 @@ async function migrateToCloud(){
   toast('Connected — local ledger pushed to the cloud');
 }
 function autoReconnect(){
-  window.addEventListener('online',()=>{ updateNw(); sync(); });
+  window.addEventListener('online',()=>{ updateNw(); sync(); loadAnnounce(); });
   window.addEventListener('offline',()=>updateNw());
+}
+/* ---- global announcement banner (broadcast by the systems admin) ---- */
+function esc(s){ return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+let annKey='';
+async function loadAnnounce(){
+  if(!navigator.onLine){ return; }
+  const el=document.getElementById('announce');
+  const r=await api('/api/announcements','','GET');
+  if(!r.ok||!r.data.ok){ if(el) el.classList.add('hidden'); return; }
+  const key='kaunta_announce_'+r.data.created_at;
+  if(localStorage.getItem('kaunta_announce')===key){ if(el) el.classList.add('hidden'); return; }
+  annKey=key;
+  el.innerHTML='<div class="ann"><div class="at"><svg class="ic ic-s"><use href="#i-alert"/></svg><b>Announcement</b></div><div class="ab">'+esc(r.data.body)+'</div><button class="ax" onclick="dismissAnnounce()">&times;</button></div>';
+  el.classList.remove('hidden');
+}
+function dismissAnnounce(){
+  if(annKey) localStorage.setItem('kaunta_announce',annKey);
+  document.getElementById('announce').classList.add('hidden');
 }
 function updateNw(){
   const el=document.getElementById('modePill');
@@ -977,6 +1007,7 @@ function boot(){
   if(hasAcc){ afterAuth(false); }
   else { show('gate'); }
   setInterval(tick,30000); tick(); go('dash'); viewDone.dash=true;
+  loadAnnounce();
 }
 
 /* =============== SEED DEMO =============== */
