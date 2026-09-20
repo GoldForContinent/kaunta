@@ -37,7 +37,7 @@ Everything runs with three pieces:
 
 - **The phone app** is a *static* website — no app store, no framework, just HTML/JS.
   For PWA installability it needs to be served over **HTTPS** with a manifest + service
-  worker, which is why it lives on **Cloudflare Pages** (`https://…pages.dev`).
+  worker, which is why it lives on **Cloudflare Pages** (`https://kaunta.pages.dev`).
 - **The API** is one Cloudflare **Worker** (JavaScript), which talks to the **D1**
   database and to **Safaricom's M-Pesa** API when money is involved.
 - Staff phones and the owner's phone share one bar through a **join code**; the server
@@ -94,13 +94,16 @@ not stored — so it can never drift out of date.
 
 ```
 pubmanager/
-├─ kaunta.html          Counter app (markup + JavaScript) — used by staff, PWA entry
-├─ owner.html           Owner dashboard (login, live summary, pay)
-├─ sw.js                Service worker: caches the app for offline, network-first pages
-├─ manifest.webmanifest PWA manifest (name, icons, start_url, standalone)
-├─ icon.svg / icon-*.png  App icons (192, 512, maskable)
-└─ server/              The Cloudflare backend
-   ├─ wrangler.toml     Worker config + D1 binding (+ placeholders for M-Pesa keys)
+├─ public/              ★ the website (what Cloudflare Pages serves)
+│  ├─ kaunta.html          Counter app (markup + JavaScript) — used by staff, PWA entry
+│  ├─ owner.html           Owner dashboard (login, live summary, pay)
+│  ├─ sw.js                Service worker: caches the app for offline, network-first pages
+│  ├─ manifest.webmanifest PWA manifest (name, icons, start_url, standalone)
+│  └─ icon.svg / icon-*.png  App icons (192, 512, maskable)
+├─ .gitignore           Not uploading node_modules / .wrangler
+├─ README.md            This file
+└─ server/              The Cloudflare backend (deployed as a Worker)
+   ├─ wrangler.toml     Worker config + D1 binding + M-Pesa env vars
    ├─ package.json      npm scripts: dev / deploy / migrate
    └─ src/
       ├─ index.js       The router — every public URL maps to a handler here
@@ -193,22 +196,22 @@ kaunta → Console**.
 npm run deploy                   # uploads server/src to a Cloudflare Worker
 ```
 
-When it finishes wrangler prints your API URL:
+When it finishes wrangler prints your API URL (this project's live URL):
 
 ```
-https://kaunta-api.<your-subdomain>.workers.dev
+https://kaunta-api.kaunta-api.workers.dev
 ```
 
 Test it (a green `{"ok":true,"ts":...}` means the worker is alive):
 
 ```
-https://kaunta-api.<your-subdomain>.workers.dev/health
+https://kaunta-api.kaunta-api.workers.dev/health
 ```
 
-> **Important:** the frontend needs to know this URL. Replace `<your-subdomain>` in:
-> - `kaunta.html` → `DEFAULT_API` (line ~673)
-> - `owner.html` → `API_BASE` fallback (line ~182)
-> - `server/wrangler.toml` → `vars.DARAJA_CALLBACK_URL` (used later by M-Pesa)
+> **Important:** the frontend needs to know this URL. This project already has it baked in:
+> - `public/kaunta.html` → `DEFAULT_API`
+> - `public/owner.html` → `API_BASE` fallback
+> - `server/wrangler.toml` → `[vars] DARAJA_CALLBACK_URL` (used by M-Pesa)
 >
 > You can also set the API URL later **inside the app** without editing files:
 > kaunta.html → settings (🔧) → "API URL" → Save server.
@@ -216,21 +219,38 @@ https://kaunta-api.<your-subdomain>.workers.dev/health
 ### Part C — Get the site online (Cloudflare Pages) → this is the installable **link**
 
 The phone app is a *static* site, so it goes on Cloudflare **Pages** (free static hosting
-that must be HTTPS for PWA install):
+that must be HTTPS for PWA install). The site files live in the **`public/`** folder.
 
-1. Go to **dash.cloudflare.com → Workers & Pages → Create → Pages → Upload assets**.
-2. Call the project `kaunta` (or anything, e.g. `kaunta-bar`).
-3. Drag in **only these files** from the project folder:
-   `kaunta.html`, `owner.html`, `sw.js`, `manifest.webmanifest`,
-   `icon.svg`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png`
-4. **Deploy**. You immediately get:
-   ```
-   https://kaunta.pages.dev            (or, for project name "kaunta-bar": …kaunta-bar.pages.dev)
-   ```
-5. Open `https://kaunta.pages.dev/kaunta.html` on your browser to check it loads.
+**Way 1 — CLI (one command):** create the project once, then deploy the folder:
+
+```powershell
+npx wrangler pages project create kaunta --production-branch main --force
+npx wrangler pages deploy public --project-name kaunta --branch main
+```
+
+> Pages *deploy* needs an API token:
+> `$env:CLOUDFLARE_API_TOKEN = "<your token>"` (create one at
+> dash.cloudflare.com/profile/api-tokens using the "Edit Cloudflare Workers" template).
+> Alternatively log in with `npx wrangler login` if your wrangler version accepts it.
+
+**Way 2 — dashboard (no CLI):** **Workers & Pages → Create → Pages → Upload assets** →
+drag the **8 files inside `public/`** (`kaunta.html`, `owner.html`, `sw.js`,
+`manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png`,
+`icon-512-maskable.png`) → Deploy.
+
+**Way 3 — git (auto-deploy on push, optional):** repository is at
+`https://github.com/GoldForContinent/kaunta`. In **Workers & Pages → Create → Pages →
+Connect to Git** pick the repo, set **Build command: (blank)** and **Build output
+directory: `public`**, then Save & Deploy. Every `git push` to `main` redeploys the site.
+
+Either way you get:
+
+```
+https://kaunta.pages.dev                       (production on branch `main`)
+```
 
 > Don't upload the `server/` folder to Pages — it contains the API source; the API lives
-> separately on the Worker.
+> separately on the Worker, deployed from `server/` with `npm run deploy`.
 
 ### Part D — Install it as a PWA on the phone (the "link first" part)
 
@@ -265,7 +285,7 @@ vars.MPESA_CONSUMER_KEY = "…"
 vars.MPESA_CONSUMER_SECRET = "…"
 vars.MPESA_PASSPHRASE = "…"           # the passphrase for the STK password hash
 vars.MPESA_TILL = "123456"            # your paybill / till number
-vars.DARAJA_CALLBACK_URL = "https://kaunta-api.<your-subdomain>.workers.dev/api/pay/callback"
+vars.DARAJA_CALLBACK_URL = "https://kaunta-api.kaunta-api.workers.dev/api/pay/callback"
 vars.MPESA_MANUAL_ALLOW = "1"         # keep manual-pay verification too
 ```
 
