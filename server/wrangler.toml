@@ -1,0 +1,19 @@
+name = "kaunta-api"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kaunta"
+database_id = "d56e6a40-24db-4b60-9009-1aace5ff9a1d"
+migrations_dir = "src"
+
+[vars]
+# --- M-Pesa Daraja (leave unset to run in manual-pay mode) ---
+# MPESA_ENV = "sandbox"
+# MPESA_CONSUMER_KEY = "xxx"
+# MPESA_CONSUMER_SECRET = "xxx"
+# MPESA_PASSPHRASE = "xxx"
+# MPESA_TILL = "123456"
+# DARAJA_CALLBACK_URL = "https://kaunta-api.kaunta-api.workers.dev/api/pay/callback"
+DARAJA_CALLBACK_URL = "https://kaunta-api.kaunta-api.workers.dev/api/pay/callback"

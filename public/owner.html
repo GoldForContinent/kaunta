@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0d0f0c">
+<title>Kaunta · Owner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800;9..144,900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0d0f0c; --paper:#f4ead6; --dim:#9a917c; --gold:#e9b95c; --gold2:#ffd98a;
+  --mpesa:#3fae5a; --ember:#ff5c38;
+  --line:rgba(244,234,214,.09); --line2:rgba(244,234,214,.16);
+  --card:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0) 34%);
+  --serif:'Fraunces',Georgia,serif; --sans:'Inter',system-ui,-apple-system,sans-serif;
+  --nav-h:74px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:var(--sans);color:var(--paper);min-height:100vh;
+  background:
+    radial-gradient(1100px 620px at 118% -8%, rgba(233,185,92,.09), transparent 60%),
+    radial-gradient(880px 520px at -18% 16%, rgba(255,92,56,.07), transparent 55%),
+    linear-gradient(180deg,#0b0d0a,#12140f 70%);
+  background-attachment:fixed}
+h1,h2,h3,.serif{font-family:var(--serif)}
+button{font-family:var(--sans)}
+.hidden{display:none!important}
+#app{max-width:520px;margin:0 auto;min-height:100vh;padding:0 0 40px}
+header{position:sticky;top:0;z-index:50;background:rgba(11,13,10,.78);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}
+.hd{display:flex;align-items:center;gap:12px;padding:13px 16px}
+.mark{width:40px;height:40px;border-radius:12px;flex:none;display:grid;place-items:center;color:#211407;
+  background:linear-gradient(150deg,#ffd98a,#e9a73b 55%,#c47a1f);box-shadow:0 4px 18px rgba(233,169,59,.35)}
+.mark svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.brand{font-weight:700;font-size:17px;letter-spacing:.2px;line-height:1.05;min-width:0;flex:1}
+.brand small{display:block;font-family:var(--sans);font-weight:600;font-size:9px;color:var(--dim);letter-spacing:2.2px;text-transform:uppercase;margin-top:3px}
+.gear{width:34px;height:34px;border-radius:10px;border:1px solid var(--line2);background:rgba(255,255,255,.03);color:var(--dim);display:grid;place-items:center;cursor:pointer;font-size:16px;flex:none}
+main{padding:16px}
+.money{font-family:var(--serif);font-weight:800;letter-spacing:.2px;
+  background:linear-gradient(120deg,#ffe3a3,#e9b95c 48%,#c98a2e);-webkit-background-clip:text;background-clip:text;color:transparent}
+.money.red{background:linear-gradient(120deg,#ff9a7a,#ff5c38 55%,#c93a17);-webkit-background-clip:text;background-clip:text;color:transparent}
+.money.grn{background:linear-gradient(120deg,#86e3a0,#3fae5a 55%,#2c8a44);-webkit-background-clip:text;background-clip:text;color:transparent}
+.k{font-size:11px;color:var(--dim);font-family:var(--sans);font-weight:700;letter-spacing:1px;vertical-align:4px;margin-right:2px}
+.fig-lg{font-size:42px;line-height:1}
+.hero{border-radius:22px;padding:20px;position:relative;overflow:hidden;
+  background:radial-gradient(320px 180px at 90% -20%, rgba(255,217,138,.16), transparent 60%),linear-gradient(160deg,#1d2016,#14160f);
+  border:1px solid rgba(233,185,92,.16);box-shadow:0 14px 40px rgba(0,0,0,.4);margin-bottom:14px}
+.hero .lbl{font-size:10px;font-weight:700;color:var(--dim);letter-spacing:2.4px;text-transform:uppercase}
+.hero .total{display:flex;align-items:baseline;gap:4px;margin-top:10px;flex-wrap:wrap}
+.hero .foot{display:flex;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px dashed rgba(244,234,214,.12)}
+.hero .foot span{font-size:11px;color:var(--dim)}
+.hero .foot b{font-size:13px;font-family:var(--serif)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.stat{border:1px solid var(--line);border-radius:18px;padding:15px;background:var(--card);box-shadow:0 8px 24px rgba(0,0,0,.22)}
+.stat .lbl{font-size:9.5px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:1.6px;display:flex;align-items:center;gap:6px}
+.stat .cdot{width:9px;height:9px;border-radius:3px}
+.stat .val{font-family:var(--serif);font-weight:800;font-size:24px;margin-top:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}
+.cardhead{display:flex;align-items:center;gap:9px;font-size:9.5px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin-bottom:12px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);gap:10px}
+.row:last-child{border-bottom:none}
+.row .l{min-width:0}
+.row .l b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .l span{font-size:11px;color:var(--dim)}
+.row .r{text-align:right;flex:none}
+.row .r b{font-family:var(--serif);font-weight:600}
+.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;font-size:9.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+.tag.cash{background:rgba(233,185,92,.13);color:var(--gold)}
+.tag.mpesa{background:rgba(63,174,90,.12);color:var(--mpesa)}
+.tag.deni{background:rgba(255,92,56,.12);color:var(--ember)}
+.heat{display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:6px}
+.heat i{flex:1;border-radius:3px 3px 0 0;background:rgba(233,185,92,.16);position:relative;min-height:3px}
+.heat i[data-v]{background:linear-gradient(180deg,#e9b95c,#7a5114)}
+.gauge{height:8px;border-radius:6px;background:rgba(255,255,255,.06);overflow:hidden;margin-top:9px}
+.gauge i{display:block;height:100%;background:linear-gradient(90deg,#e9b95c,#7a5114);transition:width .5s cubic-bezier(.22,1,.3,1)}
+.gauge i.grn{background:linear-gradient(90deg,#86e3a0,#3fae5a)}
+.gauge i.red{background:linear-gradient(90deg,#ff9a7a,#e2451f)}
+.btn{width:100%;padding:17px;border:none;border-radius:15px;font-weight:800;font-size:15px;cursor:pointer;transition:transform .1s}
+.btn:active{transform:scale(.975)}
+.btn.primary{background:linear-gradient(150deg,#ffd98a,#e9a73b 55%,#c47a1f);color:#211407;box-shadow:0 10px 30px rgba(233,169,59,.32)}
+.btn.ghost{background:rgba(255,255,255,.04);color:var(--dim);border:1px solid var(--line2)}
+.btn.small{width:auto;padding:10px 16px;font-size:12.5px;border-radius:11px}
+.pill2{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid var(--line2);background:rgba(255,255,255,.03);color:var(--dim)}
+.pill2.ok{color:var(--mpesa);border-color:rgba(63,174,90,.35);background:rgba(63,174,90,.08)}
+.pill2.gold{color:var(--gold);border-color:rgba(233,185,92,.35);background:rgba(233,185,92,.08)}
+.pill2.warn{color:var(--ember);border-color:rgba(255,92,56,.35);background:rgba(255,92,56,.08)}
+.tools{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.banner{border-radius:16px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px;justify-content:space-between;border:1px solid var(--line2)}
+.banner.warn{background:linear-gradient(180deg,rgba(255,92,56,.08),transparent);border-color:rgba(255,92,56,.35)}
+.banner b{font-size:13.5px}
+.banner p{font-size:11.5px;color:var(--dim);margin-top:2px}
+.overlay{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto;background:rgba(0,0,0,.7);backdrop-filter:blur(4px)}
+.ov-card{width:100%;max-width:420px;background:linear-gradient(180deg,#1a1d15,#12140f);border:1px solid var(--line2);border-radius:22px;padding:24px 20px}
+.ov-card h2{font-family:var(--serif);font-size:24px;margin-bottom:6px}
+.ov-card .sub{color:var(--dim);font-size:12.5px;margin-bottom:14px;line-height:1.6}
+.ov-card.scrimless{background:radial-gradient(600px 400px at 50% 20%, rgba(233,185,92,.10), transparent 60%), #0b0d0a}
+input{width:100%;padding:14px 15px;border-radius:12px;font-size:15px;font-family:inherit;color:var(--paper);background:rgba(255,255,255,.04);border:1px solid var(--line2);outline:none;margin-bottom:12px}
+input:focus{border-color:var(--gold)}
+.lbl{font-size:9.5px;font-weight:800;color:var(--dim);display:block;margin:0 0 7px 2px;text-transform:uppercase;letter-spacing:1.8px}
+.subrow{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);padding:7px 0;border-bottom:1px solid var(--line)}
+.subrow:last-child{border-bottom:none}
+.subrow b{color:var(--paper);font-weight:700}
+.err{color:var(--ember);font-size:12px;font-weight:700;margin-bottom:10px;display:none}
+.mini{font-size:11px;color:var(--dim);line-height:1.6;margin-top:10px}
+.empty{text-align:center;color:var(--dim);padding:28px 12px;font-size:13px}
+.debtor{border-radius:16px;border:1px solid var(--line);background:var(--card);padding:14px;margin-bottom:10px}
+.av{width:40px;height:40px;border-radius:12px;flex:none;display:grid;place-items:center;font-family:var(--serif);font-weight:800;font-size:15px;color:#fff;background:linear-gradient(150deg,#ff9a7a,#d63c1c)}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header><div class="hd">
+    <div class="mark"><svg viewBox="0 0 24 24"><path d="M6 3v18M9.5 3v18M13 3v18M16.5 3v14" stroke-width="1.8"/><path d="m16.5 3-10.5 18" stroke-width="1.8"/></svg></div>
+    <div class="brand"><span id="barName">Kaunta</span><small>Owner · Bar Ledger</small></div>
+    <div class="gear" onclick="logout()" title="Log out">&#10008;</div>
+  </div></header>
+  <main id="main" class="hidden">
+    <div class="tools"><span class="pill2" id="netPill">…</span><span class="pill2" id="subPill">…</span></div>
+    <div class="hero">
+      <div id="lockBanner"></div>
+      <div class="lbl">Collected today (cash + M-Pesa)</div>
+      <div class="total"><span class="k">KES</span><span class="money fig-lg" id="heroTotal">0</span></div>
+      <div class="foot">
+        <span>Debt today <b id="heroDeni" class="money red">KES 0</b></span>
+        <span>Sales <b id="heroSales" class="money grn">0</b></span>
+        <span>Shift <b id="heroShift">—</b></span>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--gold)"></span>Cash today</div><div class="val money" id="sCash">KES 0</div></div>
+      <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--mpesa)"></span>M-Pesa today</div><div class="val money grn" id="sMpesa">KES 0</div></div>
+      <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--ember)"></span>Debt today</div><div class="val money red" id="sDebtDay">KES 0</div></div>
+      <div class="stat"><div class="lbl"><span class="cdot" style="background:#f4ead6"></span>Sales today</div><div class="val" id="sCount" style="color:var(--paper)">0</div></div>
+    </div>
+    <div class="card">
+      <div class="cardhead">Sales pace today</div>
+      <div class="heat" id="heat"></div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--dim);margin-top:5px"><span>10am</span><span>2pm</span><span>6pm</span><span>10pm</span></div>
+    </div>
+    <div class="card">
+      <div class="cardhead">Stock vs sold (live)</div>
+      <div id="stock"></div>
+    </div>
+    <div class="card">
+      <div class="cardhead">Top movers today</div>
+      <div id="top"></div>
+    </div>
+    <div class="card">
+      <div class="cardhead" style="color:var(--ember)">Debt ledger <span style="margin-left:auto" id="debtSub"></span></div>
+      <div id="debts"></div>
+    </div>
+    <div class="card">
+      <div class="cardhead">Live feed</div>
+      <div id="feed"></div>
+    </div>
+  </main>
+</div>
+
+<!-- gate -->
+<div id="gate" class="overlay">
+  <div class="ov-card scrimless">
+    <h2>Kaunta · Owner</h2>
+    <p class="sub">The bar ledger that never sleeps. Watch your bars from anywhere.</p>
+    <label class="lbl">Email</label>
+    <input id="lgEmail" type="email" placeholder="owner@bar.co.ke">
+    <label class="lbl">Password</label>
+    <input id="lgPass" type="password" placeholder="••••••••">
+    <div class="err" id="lgErr"></div>
+    <button class="btn primary" onclick="doLogin()">Log in</button>
+    <p class="mini" style="text-align:center">Trial 30 days · then KES 500 / month<br><span id="apiNote" style="color:var(--gold)"></span></p>
+  </div>
+</div>
+
+<!-- pay -->
+<div id="payov" class="overlay hidden">
+  <div class="ov-card" id="payCard"></div>
+</div>
+
+<script>
+const API_BASE=localStorage.getItem('kaunta_base')||'https://kaunta-api.kaunta-api.workers.dev';
+const tokKey='kaunta_owner_token';
+let TOKEN=localStorage.getItem(tokKey)||'';
+let SUB=null, PROFILE=null;
+const DAY=86400000;
+const kes=n=>'KES '+(Math.round(n)||0).toLocaleString('en-KE');
+const oid=()=>Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+const api=async(path,body)=>{
+  const h={'Content-Type':'application/json'}; if(TOKEN)h['Authorization']='Bearer '+TOKEN;
+  try{
+    const r=await fetch(API_BASE+path,{method:body?'POST':'GET',headers:h,body:body?JSON.stringify(body):undefined});
+    let d={}; try{d=await r.json();}catch(e){}
+    return {ok:r.ok,data:d};
+  }catch(e){ return {ok:false,data:{error:'net'}}; }
+};
+
+function fmtDate(ms){ if(!ms) return '—'; return new Date(ms).toLocaleDateString('en-KE',{day:'numeric',month:'short',year:'numeric'}); }
+
+async function doLogin(){
+  const err=document.getElementById('lgErr'); err.style.display='none';
+  const r=await api('/api/login',{email:document.getElementById('lgEmail').value.trim(),password:document.getElementById('lgPass').value});
+  if(!r.ok){ err.textContent=r.data.error||'Login failed'; err.style.display='block'; return; }
+  TOKEN=r.data.token; localStorage.setItem(tokKey,TOKEN); PROFILE=r.data.user;
+  bootDash();
+}
+function logout(){
+  api('/api/logout','').then(()=>{ localStorage.removeItem(tokKey); location.reload(); });
+}
+
+const subLabel=s=>{
+  if(!s) return {t:'—',c:''};
+  const now=Date.now();
+  if(s.status==='active') return {t:'Active · until '+fmtDate(s.current_period_end),c:'ok'};
+  if(s.status==='trial') return {t:'Trial · '+(Math.ceil((s.trial_ends_at-now)/DAY))+'d left',c:'gold'};
+  if(s.status==='grace') return {t:'Unpaid · grace '+(Math.ceil(((s.grace_ends_at||now)-now)/DAY))+'d',c:'warn'};
+  return {t:'Suspended',c:'warn'};
+};
+
+async function bootDash(){
+  const err=document.getElementById('lgErr');
+  const me=await api('/api/me','');
+  if(!me.ok){ if(err){ err.textContent=me.data.error||'Session expired'; err.style.display='block'; } document.getElementById('gate').classList.remove('hidden'); return; }
+  PROFILE=me.data.user;
+  if(PROFILE.role!=='owner'){ alert('This dashboard is for bar owners. Bartenders use the Kaunta app on the counter phone.'); logout(); return; }
+  document.getElementById('barName').textContent=me.data.bar.name;
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('main').classList.remove('hidden');
+  document.getElementById('apiNote').textContent='Server: '+API_BASE;
+  loadSummary();
+  setInterval(loadSummary,15000);
+  window.addEventListener('online',()=>loadSummary());
+}
+function nowPill(){
+  const el=document.getElementById('netPill');
+  el.textContent=navigator.onLine?'● Online':'● Offline';
+  el.className='pill2 '+(navigator.onLine?'ok':'warn');
+}
+
+async function loadSummary(){
+  const from=new Date(); from.setHours(0,0,0,0);
+  const tz=-from.getTimezoneOffset();
+  const r=await api('/api/summary?from='+from.getTime()+'&until='+Date.now()+'&tz='+tz,'');
+  if(!r.ok){ if(r.data.error==='Not logged in'){ location.reload(); } return; }
+  const d=r.data;
+  SUB=d.subscription;
+  const s=subLabel(SUB);
+  const subPill=document.getElementById('subPill');
+  subPill.textContent=s.t; subPill.className='pill2 '+s.c;
+  nowPill();
+
+  const lb=document.getElementById('lockBanner');
+  if(SUB.locked || SUB.status==='suspended'){
+    lb.innerHTML='<div class="banner warn"><div><b>Subscription paused — sales data is not being accepted.</b><p>Pay to restore live syncing for your bar.</p></div><button class="btn small primary" onclick="showPay()">Pay KES '+Math.round(SUB.price_cents/100)+'</button></div>';
+  } else if(SUB.status==='trial'||SUB.status==='grace'){
+    lb.innerHTML='<div class="banner"><div><b>'+s.t+'</b><p>'+(SUB.status==='trial'?'Add M-Pesa to keep the counters running after the trial.':'Renew before the grace period ends.')+'</p></div>'+(PROFILE.role==='owner'?'<button class="btn small primary" onclick="showPay()">Pay now</button>':'' )+'</div>';
+  } else { lb.innerHTML=''; }
+
+  countUp('heroTotal', d.totals.total);
+  document.getElementById('heroDeni').textContent=kes(d.totals.deni);
+  document.getElementById('heroSales').textContent=d.totals.count;
+  document.getElementById('heroShift').textContent=fmtShift(d.shift_open);
+  document.getElementById('sCash').textContent=kes(d.totals.cash);
+  document.getElementById('sMpesa').textContent=kes(d.totals.mpesa);
+  document.getElementById('sDebtDay').textContent=kes(d.totals.deni);
+  document.getElementById('sCount').textContent=d.totals.count;
+
+  const hh=d.hourly||new Array(24).fill(0);
+  const max=Math.max(...hh,1);
+  document.getElementById('heat').innerHTML=hh.map((n,i)=>{
+    return '<i '+((n>0)?'data-v':'')+' style="opacity:'+(n>0?.5+n/max*.5:1)+'"></i>';
+  }).join('');
+
+  renderStock(d);
+  renderTop(d.top);
+  DEBTS_SNAPSHOT = d.debts||[];
+  renderDebts(d);
+  renderFeed(d.feed);
+}
+function fmtShift(openMs){
+  const mins=Math.max(0,Math.round((Date.now()-openMs)/60000));
+  const h=Math.floor(mins/60), m=mins%60;
+  return (h>0?h+'h ':'')+m+'m';
+}
+function countUp(id,to){
+  const el=document.getElementById(id);
+  if(!el) return;
+  const start=parseInt(el.dataset.v||'0')||0, dur=500, t0=performance.now();
+  el.dataset.v=to;
+  (function f(t){
+    const p=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-p,3);
+    el.textContent=kes(Math.round(start+(to-start)*e));
+    if(p<1) requestAnimationFrame(f);
+  })(performance.now());
+}
+function renderStock(d){
+  const el=document.getElementById('stock'); el.innerHTML='';
+  if(!d.drinks||!d.drinks.length){ el.innerHTML='<div class="empty">No drinks yet — add them from the app.</div>'; return; }
+  d.drinks.forEach(x=>{
+    const total=x.open*x.size, left=Math.max(0,total-x.soldMl), pct=Math.max(0,Math.min(100,left/Math.max(1,total)*100));
+    const cls=left<=0?'red':(pct<25?'grn':'');
+    const row=document.createElement('div');
+    row.style.marginBottom='12px';
+    row.innerHTML='<div class="row" style="border:none;padding:3px 0"><div class="l"><b style="font-size:13.5px">'+x.name+'</b><span>'+left.toFixed(0)+' / '+total+' ml</span></div><div class="r" style="font-family:var(--serif);font-weight:700;color:'+(cls==='red'?'var(--ember)':'var(--gold)')+'">'+(x.open>0?(left/ (x.size||1)).toFixed(1)+' bots':('0 / '+x.open+' open'))+'</div></div><div class="gauge"><i class="'+cls+'" style="width:'+pct+'%"></i></div>';
+    el.appendChild(row);
+  });
+}
+function renderTop(top){
+  const el=document.getElementById('top');
+  if(!top||!top.length){ el.innerHTML='<div class="empty">No sales yet today.</div>'; return; }
+  el.innerHTML=top.map(t=>'<div class="row"><div class="l"><b>'+t.name+'</b><span>top mover</span></div><div class="r"><b class="money" style="font-size:17px">'+kes(t.value)+'</b></div></div>').join('');
+}
+function renderDebts(d){
+  const el=document.getElementById('debts');
+  document.getElementById('debtSub').textContent=kes(d.debt_outstanding)+' · '+d.debt_count+' debtors';
+  if(!d.debts||!d.debts.length){ el.innerHTML='<div class="empty">No outstanding debts. Clean books!</div>'; return; }
+  el.innerHTML=d.debts.map((x,i)=>{
+    const ini=(x.name||'?').trim().charAt(0).toUpperCase()||'?';
+    return '<div class="debtor"><div style="display:flex;align-items:center;gap:12px">'+
+      '<div class="av">'+ini+'</div>'+
+      '<div style="flex:1;min-width:0"><b style="font-size:15px">'+x.name+'</b><div style="font-size:11px;color:var(--dim)">debt outstanding</div></div>'+
+      '<div style="text-align:right"><b class="money red" style="font-size:19px">'+kes(x.amount)+'</b></div></div>'+
+      '<div style="display:flex;gap:8px;margin-top:12px">'+
+      '<button class="btn small" style="flex:1;background:rgba(63,174,90,.14);color:var(--mpesa)" onclick="payDebt('+i+')">Receive payment</button>'+
+      '<button class="btn small" style="flex:1;background:rgba(255,255,255,.05);color:var(--dim);border:1px solid var(--line2)" onclick="clearDebt('+i+')">Clear</button>'+
+      '</div></div>';
+  }).join('');
+}
+let DEBTS_SNAPSHOT=[];
+function snapshotDebts(d){ DEBTS_SNAPSHOT=d.debts||[]; }
+function renderDebtsSetup(d){ snapshotDebts(d); renderDebts(d); }
+function openPayDebt(i){ payDebt(i); }
+function payDebt(i){
+  const x=DEBTS_SNAPSHOT[i]; if(!x) return;
+  const amt=prompt('Amount received from '+x.name+'?', x.amount);
+  const v=Math.max(0,Math.round(parseFloat(amt)||0));
+  if(!v) return;
+  doOp([{type:'debt_payment',oid:oid(),who:x.name,amount:v}], ()=>toastRes('Payment recorded — '+kes(v)));
+}
+function clearDebt(i){
+  const x=DEBTS_SNAPSHOT[i]; if(!x) return;
+  if(!confirm('Clear all debt for '+x.name+' ('+kes(x.amount)+')?')) return;
+  doOp([{type:'debt_payment',oid:oid(),who:x.name,amount:x.amount}], ()=>toastRes(x.name+' cleared'));
+}
+async function doOp(ops, after){
+  const r=await api('/api/op',{ops});
+  if(!r.ok){ alert(r.data.error||'Failed — check subscription'); return; }
+  if(after) after();
+  loadSummary();
+}
+function toastRes(m){
+  const t=document.createElement('div');
+  t.textContent=m; t.style.cssText='position:fixed;left:50%;bottom:30px;transform:translateX(-50%);z-index:400;background:linear-gradient(150deg,#fdf3d8,#e9d5a0);color:#211407;font-weight:800;font-size:13px;padding:13px 20px;border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.5)';
+  document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
+}
+function renderFeed(feed){
+  const el=document.getElementById('feed'); el.innerHTML='';
+  if(!feed||!feed.length){ el.innerHTML='<div class="empty">Nothing yet — sales will appear here in real time.</div>'; return; }
+  el.innerHTML=feed.map(s=>{
+    const tm=new Date(s.t);
+    const lbl=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0');
+    return '<div class="row"><div class="l"><b>'+s.name+' <span class="tag '+(s.size||'full')+'">'+cap(s.size||'Full')+'</span></b><span>'+lbl+' · '+(s.who||'over counter')+'</span></div>'+
+      '<div class="r"><b class="money" style="font-size:15px">'+kes(s.price)+'</b><br><span class="tag '+s.pay+'">'+({cash:'Cash',mpesa:'M-Pesa',deni:'Debt'}[s.pay]||s.pay)+'</span></div></div>';
+  }).join('');
+}
+const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+
+/* ---- pay ---- */
+async function showPay(){
+  const card=document.getElementById('payCard');
+  const price=SUB?Math.round(SUB.price_cents/100):500;
+  card.innerHTML='<h2>Pay · KES '+price+'/month</h2><p class="sub" id="payInfo">Checking…</p><div id="payMode"></div><div class="err" id="payErr"></div><button class="btn ghost" style="margin-top:10px" onclick="hidePay()">Close</button>';
+  document.getElementById('payov').classList.remove('hidden');
+  const info=await api('/api/pay/info','');
+  if(!info.ok){ document.getElementById('payInfo').textContent=info.data.error||'Could not load payment info'; return; }
+  if(info.data.mode==='manual'){
+    document.getElementById('payInfo').innerHTML='Lipa na M-Pesa, then confirm the code:';
+    document.getElementById('payMode').innerHTML=
+      '<div class="card" style="margin:0 0 8px;padding:12px;font-size:12px;color:var(--dim);line-height:1.7">'+
+      '1) M-Pesa → Lipa na M-Pesa → Pay Bill<br>'+
+      '2) Business: <b>'+info.data.paybill+'</b> · Account: <b>'+info.data.account+'</b><br>'+
+      '3) Amount <b>KES '+info.data.price+'</b><br>4) Paste the code below</div>'+
+      '<label class="lbl">M-Pesa message code</label><input id="payRef" placeholder="e.g. SLK3XQ2B9L">'+
+      '<button class="btn primary" onclick="confirmPay()">Confirm payment</button>';
+  }else{
+    document.getElementById('payInfo').textContent='M-Pesa prompt is sent to the owner’s phone — confirm the payment that is delivered.';
+    document.getElementById('payMode').innerHTML=
+      '<label class="lbl">M-Pesa phone (07…)</label><input id="payPhone" type="tel" placeholder="07xxxxxxxx">'+
+      '<button class="btn primary" onclick="requestStk()">Send M-Pesa prompt</button>';
+  }
+}
+function hidePay(){ document.getElementById('payov').classList.add('hidden'); }
+async function requestStk(){
+  const err=document.getElementById('payErr'); err.style.display='none';
+  const r=await api('/api/pay/request',{phone:document.getElementById('payPhone').value.trim()});
+  if(!r.ok){ err.textContent=r.data.error||'Could not start prompt'; err.style.display='block'; return; }
+  if(r.data.mode==='manual'){ showPay(); }
+  toastRes('M-Pesa prompt sent — enter your PIN');
+}
+async function confirmPay(){
+  const err=document.getElementById('payErr'); err.style.display='none';
+  const ref=document.getElementById('payRef')?document.getElementById('payRef').value.trim():'';
+  if(!ref){ err.textContent='Paste the M-Pesa code first'; err.style.display='block'; return; }
+  const r=await api('/api/pay/verify',{ref});
+  if(!r.ok){ err.textContent=r.data.error||'Payment not confirmed'; err.style.display='block'; return; }
+  hidePay(); toastRes('Payment confirmed — thank you!'); loadSummary();
+}
+
+window.addEventListener('beforeunload',()=>{});
+
+(function boot(){
+  nowPill();
+  if(TOKEN){ bootDash(); } else { document.getElementById('gate').classList.remove('hidden'); document.getElementById('apiNote').textContent='Server: '+API_BASE; }
+})();
+</script>
+</body>
+</html>

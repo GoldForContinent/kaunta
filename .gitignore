@@ -1,0 +1,15 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Wrangler / Cloudflare
+.wrangler/
+.workerlogs/
+
+# OS cruft
+Thumbs.db
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
