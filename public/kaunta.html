@@ -230,6 +230,11 @@ input{
 input:focus{border-color:var(--gold)}
 input::placeholder{color:var(--dim)}
 label.lbl{font-size:9.5px;font-weight:800;color:var(--dim);display:block;margin:0 0 7px 2px;text-transform:uppercase;letter-spacing:1.8px}
+.pw{position:relative;margin-bottom:12px}
+.pw input{margin-bottom:0;padding-right:70px}
+.pw button{position:absolute;right:5px;top:8px;background:rgba(255,255,255,.05);border:1px solid var(--line2);color:var(--dim);font-size:11px;font-weight:800;padding:7px 10px;border-radius:9px;cursor:pointer;transition:.15s}
+.pw button:active{transform:scale(.96)}
+.pw button.on{color:var(--gold);border-color:var(--gold)}
 
 /* ============ buttons ============ */
 .btn{
@@ -425,9 +430,10 @@ nav{
     <label class="lbl">Email</label>
     <input id="lgEmail" type="email" placeholder="you@bar.co.ke" autocomplete="email">
     <label class="lbl">Password</label>
-    <input id="lgPass" type="password" placeholder="••••••••" autocomplete="current-password">
+    <div class="pw"><input id="lgPass" type="password" placeholder="••••••••" autocomplete="current-password"><button type="button" onclick="flipEye(this,'lgPass')">Show</button></div>
     <button class="btn primary" style="margin-top:2px" onclick="doLogin()">Log in</button>
     <div class="err" id="lgErr"></div>
+    <p class="mini">Forgot your password? A Kaunta systems admin can reset it for you from the admin console.</p>
     <div class="divider">or</div>
     <button class="btn ghost" id="showSignup">Create a bar account</button>
   </div>
@@ -443,7 +449,7 @@ nav{
     <label class="lbl">Your email</label>
     <input id="suEmail" type="email">
     <label class="lbl">Password (min 6)</label>
-    <input id="suPass" type="password">
+    <div class="pw"><input id="suPass" type="password"><button type="button" onclick="flipEye(this,'suPass')">Show</button></div>
     <div class="ctlbl" style="margin-top:8px">Are you the owner?</div>
     <div class="seg" id="suMode">
       <div class="chip sel" data-m="owner">I own a bar</div>
@@ -845,6 +851,8 @@ async function doSignup(){
   if(owner) delete body.code; else if(!code){ err.textContent='Enter the bar join code from the owner'; err.style.display='block'; return; }
   const r=await api('/api/register',body);
   if(!r.ok){ err.textContent=r.data.error||'Signup failed'; err.style.display='block'; return; }
+  document.getElementById('lgEmail').value=body.email;
+  document.getElementById('lgPass').value=body.password;
   toast('Account created — logging you in');
   await doLogin();
 }
@@ -1417,6 +1425,14 @@ function openSettings(){
     <div class="subrow"><span>Join code</span><b id="accCode">${window._barJoin||'—'}</b></div>
     <div class="subrow"><span>Role</span><b>${PROFILE?PROFILE.role:'—'}</b></div>
     <button class="btn ghost" onclick="logout()" style="margin-top:8px;color:var(--ember)">Log out of this phone</button>
+    <div class="ctlbl" style="margin-top:8px">Change password</div>
+    <div class="ovset">
+      <span style="color:var(--dim);font-size:11px">Current password</span>
+      <div class="pw" style="margin-top:6px"><input id="cpCur" type="password" autocomplete="current-password"><button type="button" onclick="flipEye(this,'cpCur')">Show</button></div>
+      <span style="color:var(--dim);font-size:11px">New password (min 6)</span>
+      <div class="pw" style="margin-top:6px"><input id="cpNew" type="password" autocomplete="new-password"><button type="button" onclick="flipEye(this,'cpNew')">Show</button></div>
+      <button class="btn small ghost" style="margin-top:8px;width:100%" onclick="changePass()">Save new password</button>
+    </div>
     <div class="ctlbl" style="margin-top:8px">Server (advanced)</div>
     <div class="ovset">API URL<input id="setApi" value="${API_BASE}" placeholder="${DEFAULT_API}"><button class="btn small ghost" style="margin-top:8px;width:100%" onclick="saveServer()">Save server</button></div>
     <button class="btn ghost" onclick="newDay()" style="margin-top:10px">Start New Day · shift reset</button>
@@ -1432,6 +1448,21 @@ function saveServer(){
   const v=document.getElementById('setApi').value.trim().replace(/\/+$/,'');
   if(v&&!v.startsWith('http')) return toast('Server must start with http(s)://');
   API_BASE=v; localStorage.setItem(K_BASE,v); storeCloud(); closeSheet(); toast('Server saved'); setTimeout(()=>location.reload(),600);
+}
+function flipEye(btn, inputId){
+  const i=document.getElementById(inputId); if(!i) return;
+  const show=i.type==='password';
+  i.type=show?'text':'password';
+  btn.textContent=show?'Hide':'Show';
+  btn.classList.toggle('on',show);
+}
+async function changePass(){
+  const cur=document.getElementById('cpCur').value, nw=document.getElementById('cpNew').value;
+  if(!cur||!nw) return toast('Fill both password fields');
+  const r=await api('/api/change-password',{current_password:cur,new_password:nw});
+  if(!r.ok) return toast(r.data.error||'Change failed');
+  toast('Password updated');
+  closeSheet();
 }
 async function logout(){
   try{ await api('/api/logout','','POST'); }catch(e){}

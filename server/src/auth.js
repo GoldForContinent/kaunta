@@ -80,6 +80,53 @@ export async function logout({ DB }, token) {
   return json({ ok: true });
 }
 
+// Change the logged-in account's password (must supply the current one).
+export async function changePassword({ DB }, ctx, body) {
+  const userRow = await DB.prepare('SELECT pass_hash, pass_salt FROM users WHERE id = ?').bind(ctx.user.id).first();
+  if (!userRow) return json({ error: 'Account not found' }, 404);
+
+  const current = (body.current_password || '').toString();
+  const next = (body.new_password || '').toString();
+  if (!current) return json({ error: 'Enter your current password' }, 400);
+  if (next.length < 6) return json({ error: 'New password must be at least 6 characters' }, 400);
+
+  const hash = await hashPassword(current, userRow.pass_salt);
+  if (hash !== userRow.pass_hash) return json({ error: 'Current password is wrong' }, 401);
+
+  const salt = randomSalt();
+  const passHash = await hashPassword(next, salt);
+  await DB.prepare('UPDATE users SET pass_hash = ?, pass_salt = ? WHERE id = ?').bind(passHash, salt, ctx.user.id).run();
+  return json({ ok: true });
+}
+
+// Systems admin: reset any account's password (covers "I forgot my password").
+// Without an email service, the admin sets/generates a temp password and hands it to the owner.
+export async function adminResetPassword({ DB }, ctx, body) {
+  const user = ctx.user;
+  if (!user || user.role !== 'admin') return json({ error: 'Admin only' }, 403);
+
+  const email = (body.email || '').toString().trim().toLowerCase();
+  if (!email) return json({ error: 'Email required' }, 400);
+
+  const row = await DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+  if (!row) return json({ error: 'No account with that email' }, 404);
+
+  const provided = (body.new_password || '').toString();
+  const temp = provided.length >= 6 ? provided : genTempPassword();
+  const salt = randomSalt();
+  const passHash = await hashPassword(temp, salt);
+  await DB.prepare('UPDATE users SET pass_hash = ?, pass_salt = ? WHERE id = ?').bind(passHash, salt, row.id).run();
+
+  return json({ ok: true, email, temp_password: temp, generated: !provided });
+}
+
+function genTempPassword() {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 10; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
 function pubUser(u) {
   return { id: u.id, email: u.email, name: u.name, role: u.role, bar_id: u.bar_id };
 }

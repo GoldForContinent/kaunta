@@ -158,6 +158,13 @@ activate, suspend, change a bar's price, see the payments ledger, and **broadcas
 announcement** that appears in every bar's counter app (`kaunta.html`) and owner
 dashboard (`owner.html`).
 
+**Forgotten passwords** are handled here too: each bar row has **Reset password…** — it
+asks for the account email (and optionally a new password) and calls
+`POST /api/admin/reset-password`. If no new password is given, one is auto-generated and
+shown — the owner then **changes it in the app** (Settings → Change password, which hits
+`/api/change-password` and requires the current password). There is no reset-by-email
+flow; the admin is the recovery path.
+
 Creating the admin account (hash matches the API's PBKDF2 exactly):
 ```powershell
 $env:CLOUDFLARE_API_TOKEN = "<token with D1:Edit from §3a>"

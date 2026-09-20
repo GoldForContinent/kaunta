@@ -102,6 +102,10 @@ main{padding:16px}
 .ov-card.scrimless{background:radial-gradient(600px 400px at 50% 20%, rgba(233,185,92,.10), transparent 60%), #0b0d0a}
 input{width:100%;padding:14px 15px;border-radius:12px;font-size:15px;font-family:inherit;color:var(--paper);background:rgba(255,255,255,.04);border:1px solid var(--line2);outline:none;margin-bottom:12px}
 input:focus{border-color:var(--gold)}
+.pw{position:relative;margin-bottom:12px}
+.pw input{margin-bottom:0;padding-right:70px}
+.pw button{position:absolute;right:5px;top:8px;background:rgba(255,255,255,.05);border:1px solid var(--line2);color:var(--dim);font-size:11px;font-weight:800;padding:7px 10px;border-radius:9px;cursor:pointer;transition:.15s}
+.pw button.on{color:var(--gold);border-color:var(--gold)}
 .lbl{font-size:9.5px;font-weight:800;color:var(--dim);display:block;margin:0 0 7px 2px;text-transform:uppercase;letter-spacing:1.8px}
 .subrow{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);padding:7px 0;border-bottom:1px solid var(--line)}
 .subrow:last-child{border-bottom:none}
@@ -172,7 +176,7 @@ input:focus{border-color:var(--gold)}
     <label class="lbl">Email</label>
     <input id="lgEmail" type="email" placeholder="owner@bar.co.ke">
     <label class="lbl">Password</label>
-    <input id="lgPass" type="password" placeholder="••••••••">
+    <div class="pw"><input id="lgPass" type="password" placeholder="••••••••"><button type="button" onclick="flipEye(this,'lgPass')">Show</button></div>
     <div class="err" id="lgErr"></div>
     <button class="btn primary" onclick="doLogin()">Log in</button>
     <p class="mini" style="text-align:center">Trial 30 days · then KES 500 / month<br><span id="apiNote" style="color:var(--gold)"></span></p>
@@ -212,6 +216,13 @@ async function doLogin(){
 }
 function logout(){
   api('/api/logout','').then(()=>{ localStorage.removeItem(tokKey); location.reload(); });
+}
+function flipEye(btn, inputId){
+  const i=document.getElementById(inputId); if(!i) return;
+  const show=i.type==='password';
+  i.type=show?'text':'password';
+  btn.textContent=show?'Hide':'Show';
+  btn.classList.toggle('on',show);
 }
 
 const subLabel=s=>{

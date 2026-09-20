@@ -159,6 +159,7 @@ public routes below requires it.
 | `POST /api/pay/request` | ✔ (owner) | Start payment | STK push, or returns manual steps |
 | `POST /api/pay/callback` | — | Safaricom webhook callback | Public, from M-Pesa |
 | `POST /api/pay/verify` | ✔ (owner) | Verify a manual M-Pesa code | Idempotent per `mpesa_ref` |
+| `POST /api/change-password` | ✔ | Change your own password | Requires `current_password` + `new_password` (≥6); PBKDF2 re-hash. Settings → Change password in the app |
 | `GET /api/announcements` | — | Latest **active global announcement** | Public; every app reads it |
 | `GET /api/admin/stats` | ✔ (admin) | Platform overview: subscription counts, revenue, today | Role-gated to `admin` |
 | `GET /api/admin/bars?q=` | ✔ (admin) | Bars directory with search + subscription state | × |
@@ -169,6 +170,7 @@ public routes below requires it.
 | `GET /api/admin/announcements` | ✔ (admin) | List announcements | × |
 | `POST /api/admin/announce` | ✔ (admin) | Post a global announcement (`body`) | Shows in every app |
 | `POST /api/admin/announce/delete` | ✔ (admin) | Delete an announcement (`id`) | × |
+| `POST /api/admin/reset-password` | ✔ (admin) | Reset any account's password (`email`, optional `new_password`) | For forgotten passwords; auto-generates a temp password if none given. Hand it to the owner |
 | `GET /health` | — | Liveness probe | |
 
 ---

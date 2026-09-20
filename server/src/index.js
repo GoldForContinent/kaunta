@@ -1,7 +1,7 @@
 // Kaunta API — Cloudflare Worker router.
 
 import { json, corsHeaders } from './util.js';
-import { register, login, logout, requireAuth } from './auth.js';
+import { register, login, logout, requireAuth, changePassword, adminResetPassword } from './auth.js';
 import { syncHandler, opHandler } from './sync.js';
 import { summaryHandler } from './summary.js';
 import { payRequest, payCallback, payVerify, payInfo } from './billing.js';
@@ -86,8 +86,14 @@ export default {
       if (p === '/api/pay/verify' && req.method === 'POST') {
         return withCors(req, await payVerify(env, ctx));
       }
+      if (p === '/api/change-password' && req.method === 'POST') {
+        return withCors(req, await changePassword(env, ctx, ctx.body));
+      }
 
       // Systems admin routes (guarded by role === 'admin' inside each handler)
+      if (p === '/api/admin/reset-password' && req.method === 'POST') {
+        return withCors(req, await adminResetPassword(env, ctx, ctx.body));
+      }
       if (p === '/api/admin/stats' && req.method === 'GET') {
         return withCors(req, await adminStats(env, ctx));
       }
