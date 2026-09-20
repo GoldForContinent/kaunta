@@ -684,7 +684,7 @@ const todayStr = d=>{const x=d||new Date();return x.getFullYear()+'-'+(x.getMont
 /* =============== CLOUD: account + offline sync + subscription =============== */
 const DEFAULT_API='https://kaunta-api.kaunta-api.workers.dev';
 const K_BASE='kaunta_base', K_TOKEN='kaunta_token', K_SEQ='kaunta_seq', K_OUT='kaunta_outbox', K_SUB='kaunta_sub', K_MIG='kaunta_migrated', K_LINK='kaunta_linked';
-let API_BASE=localStorage.getItem(K_BASE)||'';
+let API_BASE=localStorage.getItem(K_BASE)||DEFAULT_API;
 let TOKEN=localStorage.getItem(K_TOKEN)||'';
 let lastSeq=parseInt(localStorage.getItem(K_SEQ)||'0')||0;
 let outbox=[]; try{ outbox=JSON.parse(localStorage.getItem(K_OUT))||[]; }catch(e){ outbox=[]; }
