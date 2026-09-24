@@ -431,16 +431,28 @@ nav{
       <div class="chip sel" data-p="staff">I work at a bar</div>
       <div class="chip" data-p="owner">I own the bar</div>
     </div>
-    <p class="mini" id="gateTip" style="margin:0 0 14px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04)"><b>Bartender?</b> Ask your owner for the 6-digit <b>join code</b>, then create your account below. Your sales are kept under your name.</p>
-    <label class="lbl">Email</label>
-    <input id="lgEmail" type="email" placeholder="you@bar.co.ke" autocomplete="email">
-    <label class="lbl">Password</label>
-    <div class="pw"><input id="lgPass" type="password" placeholder="••••••••" autocomplete="current-password"><button type="button" onclick="flipEye(this,'lgPass')">Show</button></div>
-    <button class="btn primary" style="margin-top:2px" onclick="doLogin()">Log in</button>
-    <div class="err" id="lgErr"></div>
-    <p class="mini" style="text-align:center"><span id="ownerHint" class="hidden"><b style="color:var(--gold)">Owner?</b> Your dashboard is at <a href="owner.html" style="color:var(--gold)">owner.html</a> →</span> Forgot your password? A Kaunta systems admin can reset it from the admin console.</p>
-    <div class="divider">or</div>
-    <button class="btn ghost" id="showSignup">Create a bar account</button>
+    <p class="mini" id="gateTip" style="margin:0 0 14px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04)"><b>Bartender?</b> Tap the join code below — ask your owner for the 6-digit code. Your sales are kept under your name.</p>
+    <div id="staffJoin">
+      <label class="lbl">Join code</label>
+      <input id="lgCode" placeholder="6-digit code from the owner" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+      <div class="err" id="staffErr"></div>
+      <button class="btn primary" style="margin-top:2px" onclick="staffJoin()">Join this bar</button>
+      <p class="mini" style="text-align:center">Already have an account? <a onclick="staffShowLogin()" style="color:var(--gold);cursor:pointer">Log in</a></p>
+      <div class="divider">or</div>
+      <button class="btn ghost" id="showSignup2" onclick="openStaffSignup()">Join with a different code</button>
+    </div>
+    <div id="loginBlock" class="hidden">
+      <label class="lbl">Email</label>
+      <input id="lgEmail" type="email" placeholder="you@bar.co.ke" autocomplete="email">
+      <label class="lbl">Password</label>
+      <div class="pw"><input id="lgPass" type="password" placeholder="••••••••" autocomplete="current-password"><button type="button" onclick="flipEye(this,'lgPass')">Show</button></div>
+      <button class="btn primary" style="margin-top:2px" onclick="doLogin()">Log in</button>
+      <div class="err" id="lgErr"></div>
+      <p class="mini" style="text-align:center"><a onclick="staffShowJoin()" style="color:var(--gold);cursor:pointer" class="staffOnly">← Use the join code instead</a></p>
+      <p class="mini" style="text-align:center"><span id="ownerHint" class="hidden"><b style="color:var(--gold)">Owner?</b> Your dashboard is at <a href="owner.html" style="color:var(--gold)">owner.html</a> →</span> Forgot your password? A Kaunta systems admin can reset it from the admin console.</p>
+      <div class="divider">or</div>
+      <button class="btn ghost" id="showSignup">Create a bar account</button>
+    </div>
   </div>
 </div>
 
@@ -867,19 +879,48 @@ function initGate(){
     document.querySelectorAll('#gatePath .chip').forEach(x=>x.classList.toggle('sel',x===c));
     const staff=c.dataset.p==='staff';
     document.getElementById('gateTip').innerHTML = staff
-      ? '<b>Bartender?</b> Ask your owner for the 6-digit <b>join code</b>, then create your account below. Your sales are kept under your name.'
+      ? '<b>Bartender?</b> Tap the join code below — ask your owner for the 6-digit code. Your sales are kept under your name.'
       : '<b>Owner?</b> Create your bar account below, then share the 6-digit <b>join code</b> (Settings → Join code) with your bartenders. Your dashboard is at <b>owner.html</b>.';
     document.getElementById('ownerHint').classList.toggle('hidden', staff);
+    document.querySelectorAll('.staffOnly').forEach(x=>x.style.display=staff?'':'none');
+    setGatePanel(staff);
     const codeWrap=document.getElementById('suCodeWrap');
     if(codeWrap){ document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel', x.dataset.m===c.dataset.p)); codeWrap.classList.toggle('hidden', !staff); }
   });
-  document.getElementById('showSignup').onclick=()=>{ document.getElementById('suName').value=DB&&DB.bar?DB.bar:''; show('signup'); };
+  document.getElementById('showSignup').onclick=()=>openStaffSignup(true);
+  document.getElementById('showSignup2').onclick=()=>openStaffSignup(false);
   document.getElementById('backLogin').onclick=()=>show('gate');
   document.querySelectorAll('#suMode .chip').forEach(c=>c.onclick=()=>{
     document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel',x===c));
     document.getElementById('suCodeWrap').classList.toggle('hidden', c.dataset.m!=='staff');
     document.getElementById('suName').placeholder=c.dataset.m==='staff'?'Binding — your name':'e.g. Mama Pima Gardens';
   });
+  setGatePanel(true);
+}
+let gateStaff=true, staffLoginShown=false;
+function setGatePanel(staff){
+  gateStaff=staff;
+  if(!staff) staffLoginShown=true;             // owners always see login
+  else staffLoginShown=false;                   // staff start at join code
+  document.getElementById('staffJoin').classList.toggle('hidden', !gateStaff||staffLoginShown);
+  document.getElementById('loginBlock').classList.toggle('hidden', gateStaff&&!staffLoginShown);
+}
+function staffShowLogin(){ staffLoginShown=true; setGatePanel(true); document.getElementById('lgEmail').focus(); }
+function staffShowJoin(){ staffLoginShown=false; setGatePanel(true); document.getElementById('lgCode').focus(); }
+function staffJoin(){
+  const e=document.getElementById('staffErr'); e.style.display='none';
+  const code=document.getElementById('lgCode').value.trim();
+  if(!/^\d{6}$/.test(code)){ e.textContent='The join code is 6 digits — ask your owner for it'; e.style.display='block'; return; }
+  openStaffSignup(true, code);
+}
+function openStaffSignup(ownerMode, code){
+  document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel', x.dataset.m===(ownerMode?'owner':'staff')));
+  const wrap=document.getElementById('suCodeWrap');
+  wrap.classList.toggle('hidden', ownerMode);
+  document.getElementById('suName').placeholder=ownerMode?'e.g. Mama Pima Gardens':'Your name — how the boss knows you';
+  if(code) document.getElementById('suCode').value=code;
+  document.getElementById('suName').value=ownerMode?(DB&&DB.bar?DB.bar:''):'';
+  show('signup');
 }
 async function doLogin(){
   const err=document.getElementById('lgErr'); err.style.display='none';
