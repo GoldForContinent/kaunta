@@ -1660,6 +1660,8 @@ function openSettings(){
     <div class="ctlbl" style="margin-top:4px">Bar name</div>
     <input id="setBar" value="${DB.bar}">
     <button class="btn primary" onclick="saveBar()">Save name</button>
+    <div class="ctlbl" style="margin-top:4px">App on this phone</div>
+    <button class="btn ghost" onclick="installApp()">Install Kaunta · add to home screen</button>
     <div class="ctlbl" style="margin-top:4px">Account</div>
     <div class="subrow"><span>Email</span><b id="accEmail">${PROFILE?PROFILE.email:'—'}</b></div>
     <div class="subrow"><span>Join code</span><b id="accCode">${window._barJoin||'—'}</b></div>
@@ -1790,12 +1792,37 @@ boot();
 
 /* =============== PWA: service worker + install ============ */
 let deferredPrompt=null;
-function showInstall(){ document.getElementById('install').classList.remove('hidden'); }
-function hideInstall(){ document.getElementById('install').classList.add('hidden'); }
+let installSeen=false;
+function showInstall(){
+  if(installSeen) return;
+  installSeen=true;
+  const d=document.getElementById('install');
+  if(d) d.classList.remove('hidden');
+}
+function hideInstall(){ const d=document.getElementById('install'); if(d) d.classList.add('hidden'); }
 function installApp(){
-  if(!deferredPrompt) return;
-  deferredPrompt.prompt();
-  deferredPrompt.userChoice.then(()=>{ deferredPrompt=null; hideInstall(); }).catch(()=>{});
+  if(deferredPrompt){
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(()=>{ deferredPrompt=null; hideInstall(); }).catch(()=>{});
+    return;
+  }
+  const d=document.getElementById('install');
+  if(d) d.classList.add('hidden');
+  const ios=/iPhone|iPad|iPod/.test(navigator.userAgent);
+  const html=ios
+    ? `<h3 class="serif">Install Kaunta</h3>
+       <p class="mini" style="margin-top:6px">Apple iPhones don't show an install button in the browser. It takes about ten seconds:</p>
+       <div class="ctlbl" style="margin-top:14px">1. Tap the Share box <span style="color:var(--dim)">(square with an up-arrow, bottom of Safari)</span></div>
+       <div class="ctlbl">2. Tap <b style="color:var(--gold)">"Add to Home Screen"</b></div>
+       <div class="ctlbl">3. Tap <b style="color:var(--gold)">"Add"</b> in the top-right</div>
+       <p class="mini" style="margin-top:8px">Kaunta now lives on your home screen and opens full-screen, offline-ready.</p>`
+    : `<h3 class="serif">Install Kaunta</h3>
+       <p class="mini" style="margin-top:6px">No native install button showed up — no problem:</p>
+       <div class="ctlbl" style="margin-top:14px">1. Tap the ⋮ menu in the Chrome bar</div>
+       <div class="ctlbl">2. Tap <b style="color:var(--gold)">"Add to Home screen"</b> (or "Install app")</div>
+       <div class="ctlbl">3. Tap <b style="color:var(--gold)">"Install"</b> on the pop-up</div>
+       <p class="mini" style="margin-top:8px">It opens full-screen and keeps working with no internet.</p>`;
+  openSheet(html+'<button class="btn primary" style="margin-top:14px;width:100%" onclick="closeSheet()">Got it</button>');
 }
 if('serviceWorker' in navigator){
   const ok = location.protocol==='https:' || ['localhost','127.0.0.1'].indexOf(location.hostname)>-1;
@@ -1804,7 +1831,7 @@ if('serviceWorker' in navigator){
     window.addEventListener('beforeinstallprompt',e=>{
       e.preventDefault(); deferredPrompt=e; showInstall();
     });
-    window.addEventListener('appinstalled',()=>hideInstall());
+    window.addEventListener('appinstalled',()=>{ hideInstall(); if(deferredPrompt){ deferredPrompt=null; } });
   }
 }
 </script>
