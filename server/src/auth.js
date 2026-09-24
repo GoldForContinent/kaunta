@@ -80,6 +80,13 @@ export async function logout({ DB }, token) {
   return json({ ok: true });
 }
 
+// List the bar's employees (every account attached to this bar), for the
+// "who is on shift" picker on staff phones.
+export async function barStaff({ DB }, ctx) {
+  const rows = await DB.prepare('SELECT id, name, role FROM users WHERE bar_id = ? ORDER BY name').bind(ctx.bar.id).all();
+  return json({ ok: true, staff: rows.results || [] });
+}
+
 // Change the logged-in account's password (must supply the current one).
 export async function changePassword({ DB }, ctx, body) {
   const userRow = await DB.prepare('SELECT pass_hash, pass_salt FROM users WHERE id = ?').bind(ctx.user.id).first();

@@ -229,6 +229,11 @@ input{
 }
 input:focus{border-color:var(--gold)}
 input::placeholder{color:var(--dim)}
+select{
+  width:100%;padding:14px 15px;border-radius:12px;font-size:15px;font-family:inherit;color:var(--paper);
+  background:rgba(255,255,255,.04);border:1px solid var(--line2);outline:none;margin-bottom:12px;transition:border-color .15s;
+  -webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23e9b95c' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
+select option{background:#14160f;color:var(--paper)}
 label.lbl{font-size:9.5px;font-weight:800;color:var(--dim);display:block;margin:0 0 7px 2px;text-transform:uppercase;letter-spacing:1.8px}
 .pw{position:relative;margin-bottom:12px}
 .pw input{margin-bottom:0;padding-right:70px}
@@ -461,7 +466,7 @@ nav{
   <div class="ov-card">
     <h2>Create account</h2>
     <p class="sub">Own a bar, or join one as staff with its join code.</p>
-    <label class="lbl">Bar / business name</label>
+    <label class="lbl" id="suNameLbl">Bar / business name</label>
     <input id="suName" placeholder="e.g. Mama Pima Gardens">
     <label class="lbl">Your email</label>
     <input id="suEmail" type="email">
@@ -727,6 +732,8 @@ let SUB=null; try{ SUB=JSON.parse(localStorage.getItem(K_SUB))||null; }catch(e){
 let migrated=(localStorage.getItem(K_MIG)==='1');
 let lastLinked=parseInt(localStorage.getItem(K_LINK)||'0')||0;
 let PROFILE=null;
+let activeStaff=null;      // {id,name} picked at shift start; sales stamp this while set
+let staffList=null;        // cached employee list from /api/bar/staff
 let syncing=false, syncTimer=null;
 
 const api=async(path, body, method)=>{
@@ -893,7 +900,9 @@ function initGate(){
   document.querySelectorAll('#suMode .chip').forEach(c=>c.onclick=()=>{
     document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel',x===c));
     document.getElementById('suCodeWrap').classList.toggle('hidden', c.dataset.m!=='staff');
-    document.getElementById('suName').placeholder=c.dataset.m==='staff'?'Binding — your name':'e.g. Mama Pima Gardens';
+    document.getElementById('suNameLbl').textContent=c.dataset.m==='staff'?'Your name':'Bar / business name';
+    document.getElementById('suName').placeholder=c.dataset.m==='staff'?'Your name — how the boss knows you':'e.g. Mama Pima Gardens';
+    if(c.dataset.m==='owner'&&DB.bar){ document.getElementById('suName').value=DB.bar; }
   });
   setGatePanel(true);
 }
@@ -911,15 +920,20 @@ function staffJoin(){
   const e=document.getElementById('staffErr'); e.style.display='none';
   const code=document.getElementById('lgCode').value.trim();
   if(!/^\d{6}$/.test(code)){ e.textContent='The join code is 6 digits — ask your owner for it'; e.style.display='block'; return; }
-  openStaffSignup(true, code);
+  openStaffSignup(false, code);
 }
-function openStaffSignup(ownerMode, code){
+function staffModeChips(ownerMode){
   document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel', x.dataset.m===(ownerMode?'owner':'staff')));
   const wrap=document.getElementById('suCodeWrap');
-  wrap.classList.toggle('hidden', ownerMode);
-  document.getElementById('suName').placeholder=ownerMode?'e.g. Mama Pima Gardens':'Your name — how the boss knows you';
+  if(wrap) wrap.classList.toggle('hidden', ownerMode);
+  const lbl=document.getElementById('suNameLbl'), inp=document.getElementById('suName');
+  if(lbl) lbl.textContent=ownerMode?'Bar / business name':'Your name';
+  if(inp){ inp.placeholder=ownerMode?'e.g. Mama Pima Gardens':'Your name — how the boss knows you'; inp.value=ownerMode&&DB&&DB.bar?'':(inp.value||''); }
+  if(ownerMode&&DB&&DB.bar&&inp&&!inp.dataset.touched) inp.value=DB.bar;
+}
+function openStaffSignup(ownerMode, code){
+  staffModeChips(ownerMode);
   if(code) document.getElementById('suCode').value=code;
-  document.getElementById('suName').value=ownerMode?(DB&&DB.bar?DB.bar:''):'';
   show('signup');
 }
 async function doLogin(){
@@ -1097,6 +1111,8 @@ function payHide(){ show('back'); }
 
 /* ---- boot ---- */
 function boot(){
+  const os=openShift();
+  if(os&&os.user_id) activeStaff={id:os.user_id, name:os.user_name||os.user_id};
   initGate();
   const hasAcc=(localStorage.getItem(K_TOKEN)||'').length>0;
   if(hasAcc){ afterAuth(false); }
@@ -1208,6 +1224,11 @@ function renderRegs(){
 document.getElementById('debtName').addEventListener('input',e=>{S.who=e.target.value; renderRegs(); if(!e.target.value) S.who='';});
 function addReg(n){ DB.regs[n]=(DB.regs[n]||0)+1; }
 
+const curStaff=()=>{
+  if(activeStaff) return activeStaff;
+  return PROFILE?{id:PROFILE.id,name:PROFILE.name}:{id:'',name:''};
+};
+
 document.getElementById('sellBtn').onclick=()=>{
   const d=DB.drinks.find(x=>x.id===S.drink);
   const price=drinkPrice(d,S.size);
@@ -1219,9 +1240,10 @@ document.getElementById('sellBtn').onclick=()=>{
   const amt=price*S.qty;
   if(S.pay==='deni'){ DB.debts[who]=(DB.debts[who]||0)+amt; addReg(who); }
   d.soldMl += pourMl(d,S.size,S.qty);
-  DB.sales.push({t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:'', uid:PROFILE?PROFILE.id:'', staff:PROFILE?PROFILE.name:''});
+  const st=curStaff();
+  DB.sales.push({t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:'', uid:st.id, staff:st.name});
   save();
-  enqueue('sale',{t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:'', uid:PROFILE?PROFILE.id:'', staff:PROFILE?PROFILE.name:''});
+  enqueue('sale',{t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:'', uid:st.id, staff:st.name});
   flash(amt, d.name+' · '+FR_LBL[S.size]+' · '+S.qty+' × '+(S.pay==='deni'?who:S.pay));
   chime();
   updChips(); renderSell(); renderDash();
@@ -1385,7 +1407,7 @@ function doPay(){
   const amt=Math.max(0,Math.round(parseFloat(document.getElementById('payAmt').value)||0));
   if(!amt) return;
   DB.debts[who]=Math.max(0, DB.debts[who]-amt);
-  DB.sales.push({t:Date.now(), drink:'_pay', size:'', qty:1, price:amt, pay:'cash', who, note:'Debt payment', uid:PROFILE?PROFILE.id:'', staff:PROFILE?PROFILE.name:''});
+  DB.sales.push({t:Date.now(), drink:'_pay', size:'', qty:1, price:amt, pay:'cash', who, note:'Debt payment', uid:curStaff().id, staff:curStaff().name});
   save(); enqueue('debt_payment',{who,amount:amt}); closeSheet(); toast(who+' paid '+kes(amt)); chime();
   renderDeni(); renderDash();
 }
@@ -1409,7 +1431,7 @@ function addDeni(){
   if(!n) return toast('Write the name');
   if(a<=0) return toast('Amount must be > 0');
   DB.debts[n]=(DB.debts[n]||0)+a; addReg(n);
-  DB.sales.push({t:Date.now(), drink:'_deni', size:'', qty:1, price:a, pay:'deni', who:n, note:'Add debt', uid:PROFILE?PROFILE.id:'', staff:PROFILE?PROFILE.name:''});
+  DB.sales.push({t:Date.now(), drink:'_deni', size:'', qty:1, price:a, pay:'deni', who:n, note:'Add debt', uid:curStaff().id, staff:curStaff().name});
   save(); enqueue('add_debt',{who:n,amount:a}); closeSheet(); toast(n+' + '+kes(a)); renderDeni(); renderDash();
 }
 
@@ -1568,10 +1590,48 @@ function renderShift(){
 function startShift(){
   if(openShift()) return toast('A shift is already open on this phone');
   if(!PROFILE) return toast('Log in first — you need an account to start a shift');
-  const id=oid();
-  DB.shifts.push({id, user_id:PROFILE.id, user_name:PROFILE.name, open_at:Date.now(), close_at:null});
-  save(); enqueue('set_shift',{action:'open',id,user_id:PROFILE.id,name:PROFILE.name,t:Date.now()});
-  renderShift(); renderDash(); toast('Shift started — '+PROFILE.name);
+  fetchStaff();
+  const st=curStaff();
+  const options=(staffList&&staffList.length)
+    ? staffList.map(s=>`<option value="${esc(s.id)}" ${s.id===st.id?'selected':''}>${esc(s.name)}${s.role==='owner'?' · Owner':''}</option>`).join('')
+    : `<option value="${esc(st.id)}">${esc(st.name)}</option>`;
+  openSheet(`
+    <h3 class="serif">Start my shift</h3>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Who is working the counter? Sales are kept under this name so the owner sees exactly who sold what.</p>
+    <label class="lbl">On shift</label>
+    <select id="shWho">${options}</select>
+    <div class="seg" id="shWhoChips"></div>
+    <button class="btn primary" onclick="doStartShift()">Start my shift</button>
+  `);
+}
+function doStartShift(){
+  const sel=document.getElementById('shWho');
+  let name=sel.selectedOptions[0]?sel.selectedOptions[0].textContent.replace(/\s*·\s*Owner\s*$/,''):'';
+  const id=sel.value;
+  if(staffList&&staffList.length){
+    const m=staffList.find(s=>s.id===sel.value);
+    if(m) name=m.name;
+  }
+  if(!name) name=activeStaff?activeStaff.name:(PROFILE?PROFILE.name:'Bar staff');
+  activeStaff={id, name};
+  const sid=oid();
+  DB.shifts.push({id:sid, user_id:id, user_name:name, open_at:Date.now(), close_at:null});
+  save(); enqueue('set_shift',{action:'open',id:sid,user_id:id,name,t:Date.now()});
+  closeSheet(); renderShift(); renderDash(); toast('Shift started — '+name);
+}
+async function fetchStaff(){
+  try{
+    const r=await api('/api/bar/staff','','GET');
+    if(r.ok&&r.data&&Array.isArray(r.data.staff)){
+      staffList=r.data.staff.filter(s=>s.name);
+      const m=staffList.find(s=>s.id===curStaff().id)||staffList.find(s=>s.id===(PROFILE?PROFILE.id:''))||staffList[0];
+      const el=document.getElementById('shWho');
+      if(el&&staffList.length){
+        el.innerHTML=staffList.map(s=>`<option value="${esc(s.id)}" ${m&&s.id===m.id?'selected':''}>${esc(s.name)}${s.role==='owner'?' · Owner':''}</option>`).join('');
+        if(m&&m.name){ activeStaff={id:m.id,name:m.name}; }
+      }
+    }
+  }catch(e){}
 }
 function endShift(){
   const s=openShift(); if(!s) return toast('No open shift');
@@ -1595,6 +1655,7 @@ function doEndShift(){
   const t=Date.now();
   s.close_at=t; s.close_cash=cash; s.close_mpesa=mpesa; s.close_deni=deni;
   save(); enqueue('set_shift',{action:'close',id:s.id,t,close_cash:cash,close_mpesa:mpesa,close_deni:deni,counts:{}});
+  activeStaff=null;
   closeSheet(); renderShift(); renderDash(); toast('Shift handed over');
 }
 function setOpen(id,n){
@@ -1639,6 +1700,7 @@ function newDay(){
   if(s0){ s0.close_at=Date.now(); enqueue('set_shift',{action:'close',id:s0.id,t:Date.now()}); }
   DB.drinks.forEach(d=>d.soldMl=0);
   DB.open=Date.now();
+  activeStaff=null;
   save(); enqueue('new_day'); toast('New day started. Ready to sell!'); renderStock(); renderShift(); renderDash();
 }
 
