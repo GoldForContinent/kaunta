@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "wrangler": "^4.135.0"
+  },
+  "allowScripts": {
+    "workerd@1.20260918.1": true
   }
 }

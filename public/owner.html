@@ -123,6 +123,7 @@ input:focus{border-color:var(--gold)}
   <header><div class="hd">
     <div class="mark"><svg viewBox="0 0 24 24"><path d="M6 3v18M9.5 3v18M13 3v18M16.5 3v14" stroke-width="1.8"/><path d="m16.5 3-10.5 18" stroke-width="1.8"/></svg></div>
     <div class="brand"><span id="barName">Kaunta</span><small>Owner · Bar Ledger</small></div>
+    <div class="pill2 gold" id="joinPill" title="Share this code with your bartenders" onclick="copyJoin()" style="cursor:pointer">JOIN&nbsp;<b id="joinCode" style="letter-spacing:2px">—</b></div>
     <div class="gear" onclick="logout()" title="Log out">&#10008;</div>
   </div></header>
   <div id="announce" class="hidden"></div>
@@ -154,6 +155,14 @@ input:focus{border-color:var(--gold)}
       <div id="stock"></div>
     </div>
     <div class="card">
+      <div class="cardhead">Stock-take · cash up</div>
+      <div id="stocktake"></div>
+    </div>
+    <div class="card">
+      <div class="cardhead">Staff &amp; shifts</div>
+      <div id="shifts"></div>
+    </div>
+    <div class="card">
       <div class="cardhead">Top movers today</div>
       <div id="top"></div>
     </div>
@@ -172,7 +181,7 @@ input:focus{border-color:var(--gold)}
 <div id="gate" class="overlay">
   <div class="ov-card scrimless">
     <h2>Kaunta · Owner</h2>
-    <p class="sub">The bar ledger that never sleeps. Watch your bars from anywhere.</p>
+    <p class="sub">The owner's view — real-time sales, stock-take with expected money, staff shifts and handovers.<br><b>Bartenders</b> use the Kaunta counter app on the bar's phone to ring sales and start their shifts.</p>
     <label class="lbl">Email</label>
     <input id="lgEmail" type="email" placeholder="owner@bar.co.ke">
     <label class="lbl">Password</label>
@@ -196,6 +205,28 @@ let SUB=null, PROFILE=null;
 const DAY=86400000;
 const kes=n=>'KES '+(Math.round(n)||0).toLocaleString('en-KE');
 const oid=()=>Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+const hhmm=ms=>new Date(ms).toLocaleTimeString('en-KE',{hour:'2-digit',minute:'2-digit'});
+const dstr=ms=>new Date(ms).toLocaleDateString('en-KE',{day:'numeric',month:'short'});
+/* expected-money band: min = all whole, max = all subdivided (quarters or shots) */
+function bottleMax(d){
+  if(!(+d.divisible)) return 0;
+  const byQ=(+d.quarter||0)>0 ? 4*(+d.quarter||0) : 0;
+  const byS=((+d.shot_ml||0)>0)&&((+d.shot_price||0)>0)? Math.floor((+d.size||0)/(+d.shot_ml||1))*(+d.shot_price||0) :0;
+  return Math.max(byQ,byS,0)||0;
+}
+function drinkBand(d,bottles){
+  const min=Math.round(bottles*(+d.full||0));
+  const mx=bottleMax(d)>0? Math.round(bottles*bottleMax(d)) : min;
+  return {min, max:Math.max(min,mx)};
+}
+let JOIN_CODE='';
+function copyJoin(){
+  const c=(JOIN_CODE||'').trim(); if(!c) return;
+  const ta=document.createElement('textarea'); ta.value=c;
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); }catch(e){}
+  ta.remove(); toastRes('Join code copied: '+c);
+}
 const api=async(path,body)=>{
   const h={'Content-Type':'application/json'}; if(TOKEN)h['Authorization']='Bearer '+TOKEN;
   try{
@@ -280,6 +311,12 @@ async function loadSummary(){
   if(!r.ok){ if(r.data.error==='Not logged in'){ location.reload(); } return; }
   const d=r.data;
   SUB=d.subscription;
+  if(d.bar&&d.bar.join_code){
+    JOIN_CODE=d.bar.join_code;
+    document.getElementById('joinCode').textContent=d.bar.join_code;
+    document.getElementById('joinPill').classList.remove('hidden');
+  }
+  LAST_SUMMARY=d;
   const s=subLabel(SUB);
   const subPill=document.getElementById('subPill');
   subPill.textContent=s.t; subPill.className='pill2 '+s.c;
@@ -309,6 +346,8 @@ async function loadSummary(){
 
   renderStock(d);
   renderTop(d.top);
+  renderStocktake(d);
+  renderShifts(d);
   DEBTS_SNAPSHOT = d.debts||[];
   renderDebts(d);
   renderFeed(d.feed);
@@ -340,6 +379,83 @@ function renderStock(d){
     row.innerHTML='<div class="row" style="border:none;padding:3px 0"><div class="l"><b style="font-size:13.5px">'+x.name+'</b><span>'+left.toFixed(0)+' / '+total+' ml</span></div><div class="r" style="font-family:var(--serif);font-weight:700;color:'+(cls==='red'?'var(--ember)':'var(--gold)')+'">'+(x.open>0?(left/ (x.size||1)).toFixed(1)+' bots':('0 / '+x.open+' open'))+'</div></div><div class="gauge"><i class="'+cls+'" style="width:'+pct+'%"></i></div>';
     el.appendChild(row);
   });
+}
+let TAKE_COUNTS={}, LAST_SUMMARY=null;
+function renderStocktake(d){
+  const el=document.getElementById('stocktake'); el.innerHTML='';
+  if(!d.drinks||!d.drinks.length){ el.innerHTML='<div class="empty">Add drinks from the counter app first.</div>'; return; }
+  const agg=d.drink_agg||{};
+  const restockQ=id=>(d.restocks||[]).filter(r=>r.drink===id).reduce((a,r)=>a+r.qty,0);
+  let Tmin=0,Tmax=0,Tbook=0;
+  const rows=d.drinks.map(x=>{
+    const size=+x.size||0, has=(+x.open||0)+restockQ(x.id);
+    if(TAKE_COUNTS[x.id]===undefined) TAKE_COUNTS[x.id]=Math.round(Math.max(0,has-(+x.soldMl||0)/size));
+    const c=TAKE_COUNTS[x.id], soldB=Math.max(0,has-c);
+    const band=drinkBand(x,soldB);
+    const book=agg[x.id]||0;
+    Tmin+=band.min; Tmax+=band.max; Tbook+=book;
+    const flag=(book<band.min-1)?' · <span style="color:var(--ember)">LOW</span>':(book>band.max+1)?' · <span style="color:var(--ember)">HIGH</span>':'';
+    return '<div class="row" style="align-items:flex-start">'+
+      '<div class="l"><b>'+esc(x.name)+'</b>'+
+        '<span>sold '+soldB.toFixed(1)+' of '+has+' opened'+(restockQ(x.id)?(' (+'+restockQ(x.id)+' refill)'):'')+'</span></div>'+
+      '<div class="r"><div style="display:flex;align-items:center;gap:6px">'+
+        '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="takeAdj(\''+x.id+'\',-1)">−</button>'+
+        '<input type="number" value="'+c+'" onchange="takeSet(\''+x.id+'\',this.value)" style="width:72px;text-align:center;padding:8px;margin:0" title="count now on shelf">'+
+        '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="takeAdj(\''+x.id+'\',1)">+</button>'+
+      '</div>'+
+      '<div class="mini" style="margin:6px 0 0">expected <b>'+kes(band.min)+'–'+kes(band.max)+'</b> · ledger '+kes(book)+flag+'</div></div></div>';
+  }).join('');
+  const diff=Tbook-Tmin;
+  const wind=(Tbook<Tmin-1)||(Tbook>Tmax+1);
+  el.innerHTML='<div class="subrow" style="border:none;font-size:11px;color:var(--dim);padding-bottom:4px">Set what is on the shelf now — the expected money band is what those bottles should have earned. Compare with the ledger.</div>'+rows+
+    '<div class="subrow" style="margin-top:8px"><span>Expected today</span><b class="money">KES '+kes(Tmin)+' – '+kes(Tmax)+'</b></div>'+
+    '<div class="subrow"><span>Recorded on ledger</span><b '+(wind?'style="color:var(--ember)"':'')+'>'+kes(Tbook)+'</b></div>'+
+    '<div class="subrow"><span>Vs low end</span><b class="money '+(diff>=-1?'grn':'red')+'">'+(diff>0?'+':'')+kes(diff)+'</b></div>'+
+    '<button class="btn small ghost" style="margin-top:10px" onclick="takeReset()">Reset counts</button>';
+}
+function takeAdj(id,di){ if(TAKE_COUNTS[id]===undefined) TAKE_COUNTS[id]=0; TAKE_COUNTS[id]=Math.max(0,(TAKE_COUNTS[id]||0)+di); if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY); }
+function takeSet(id,v){
+  const n=Math.round(parseFloat(v)); if(!isFinite(n)||n<0) { renderStocktake(LAST_SUMMARY); return; }
+  TAKE_COUNTS[id]=n; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY);
+}
+function takeReset(){ TAKE_COUNTS={}; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY); }
+function renderShifts(d){
+  const el=document.getElementById('shifts'); el.innerHTML='';
+  const shifts=d.shifts||[];
+  const open=shifts.find(s=>!s.close_at);
+  const ut=d.uid_totals||{};
+  const uids=Object.keys(ut);
+  let html='';
+  if(open){
+    html+='<div class="card" style="margin:2px 0 10px;border-color:rgba(63,174,90,.35)">'+
+      '<div class="cardhead" style="color:var(--mpesa)">Shift on now</div>'+
+      '<div class="subrow"><span>Bartender</span><b>'+esc(open.user_name||'Unknown staff')+'</b></div>'+
+      '<div class="subrow"><span>Opened</span><b>'+hhmm(open.open_at)+'</b></div>'+
+      '<div class="subrow"><span>Sales this shift</span><b>'+open.totals.n+' · '+kes((open.totals.cash||0)+(open.totals.mpesa||0)+(open.totals.deni||0))+'</b></div></div>';
+  }
+  if(uids.length){
+    html+='<div class="cardhead" style="margin-top:4px">Who sold today</div>';
+    html+=uids.map(uid=>{
+      const o=ut[uid];
+      return '<div class="row"><div class="l"><b>'+esc(o.name||'Staff')+'</b><span>'+o.n+' sales</span></div>'+
+        '<div class="r" style="display:flex;gap:6px;flex-wrap:wrap">'+
+        '<span class="pill2">C '+kes(o.cash)+'</span><span class="pill2 ok">MP '+kes(o.mpesa)+'</span>'+(o.deni?'<span class="pill2 warn">D '+kes(o.deni)+'</span>':'')+'</div></div>';
+    }).join('');
+  }
+  const past=shifts.filter(s=>s.close_at).slice(0,6);
+  if(past.length){
+    html+='<div class="cardhead" style="margin-top:8px">Handovers</div>';
+    html+=past.map(s=>{
+      const total=(s.totals.cash||0)+(s.totals.mpesa||0)+(s.totals.deni||0);
+      let ok=true;
+      if(s.stored) ok = Math.abs((s.stored.cash||0)-(s.totals.cash||0))<1.5 && Math.abs((s.stored.mpesa||0)-(s.totals.mpesa||0))<1.5;
+      return '<div class="row"><div class="l"><b>'+esc(s.user_name||'Unknown staff')+'</b>'+
+        '<span>'+dstr(s.open_at)+' '+hhmm(s.open_at)+' → '+hhmm(s.close_at)+' · '+s.totals.n+' sales</span></div>'+
+        '<div class="r"><b class="money">'+kes(total)+'</b>'+(s.stored?'<span class="tag '+(ok?'mpesa':'deni')+'" style="margin-top:5px">'+(ok?'lights match':'handover off')+'</span>':'')+'</div></div>';
+    }).join('');
+  }
+  if(!open&&!uids.length&&!past.length) html='<div class="empty">No shifts yet — bartenders start their shift from the counter app.</div>';
+  el.innerHTML=html;
 }
 function renderTop(top){
   const el=document.getElementById('top');
@@ -395,7 +511,7 @@ function renderFeed(feed){
   el.innerHTML=feed.map(s=>{
     const tm=new Date(s.t);
     const lbl=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0');
-    return '<div class="row"><div class="l"><b>'+s.name+' <span class="tag '+(s.size||'full')+'">'+cap(s.size||'Full')+'</span></b><span>'+lbl+' · '+(s.who||'over counter')+'</span></div>'+
+    return '<div class="row"><div class="l"><b>'+s.name+' <span class="tag '+(s.size||'full')+'">'+cap(s.size||'Full')+'</span></b><span>'+lbl+' · '+(s.staff||s.who||'over counter')+'</span></div>'+
       '<div class="r"><b class="money" style="font-size:15px">'+kes(s.price)+'</b><br><span class="tag '+s.pay+'">'+({cash:'Cash',mpesa:'M-Pesa',deni:'Debt'}[s.pay]||s.pay)+'</span></div></div>';
   }).join('');
 }

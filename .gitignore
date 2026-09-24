@@ -5,6 +5,7 @@ npm-debug.log*
 # Wrangler / Cloudflare
 .wrangler/
 .workerlogs/
+.env
 
 # OS cruft
 Thumbs.db

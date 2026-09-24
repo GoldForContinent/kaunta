@@ -18,7 +18,7 @@ export async function subOf(DB, barId) {
   return subState(row);
 }
 
-const TYPES = new Set(['sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'new_day', 'set_bar']);
+const TYPES = new Set(['sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'new_day', 'set_bar', 'restock', 'set_drink_split', 'set_shift']);
 
 // Builds D1 statements that apply one op to the state tables (change-log row handled by caller).
 export function applyStatements(barId, op, now, sizeOf) {
@@ -30,14 +30,18 @@ export function applyStatements(barId, op, now, sizeOf) {
     case 'sale': {
       const n = Math.max(1, Math.round(op.qty || 1));
       const price = Math.max(0, Math.round(op.price || 0));
-      q('INSERT INTO sales (bar_id, t, drink, size, qty, price, pay, who, note) VALUES (?,?,?,?,?,?,?,?,?)',
-        barId, Math.round(op.t || now), String(op.drink || '?'), String(op.size || ''), n, price, String(op.pay || 'cash'), String(op.who || ''), 'Sale');
+      q('INSERT INTO sales (bar_id, t, drink, size, qty, price, pay, who, note, uid, staff) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        barId, Math.round(op.t || now), String(op.drink || '?'), String(op.size || ''), n, price, String(op.pay || 'cash'), String(op.who || ''), 'Sale',
+        String(op.uid || '').slice(0, 64), String(op.staff || '').slice(0, 60));
       if (op.pay === 'deni' && who) {
         q('INSERT INTO debts (bar_id, name, amount) VALUES (?,?,?) ON CONFLICT(bar_id, name) DO UPDATE SET amount = amount + excluded.amount', barId, who, price);
         q('INSERT INTO regs (bar_id, name, cnt) VALUES (?,?,1) ON CONFLICT(bar_id, name) DO UPDATE SET cnt = cnt + 1', barId, who);
       }
-      const ml = sizeOf(op.drink) != null ? Math.round(sizeOf(op.drink) * FRACT[op.size] * n) : 0;
-      if (ml > 0) q('UPDATE drinks SET soldMl = soldMl + ? WHERE id = ? AND bar_id = ?', ml, String(op.drink), barId);
+      const info = sizeOf(op.drink);
+      let unit = 0;
+      if (op.size === 'shot') unit = info ? info.shot_ml || 0 : 0;
+      else if (info && FRACT[op.size] != null) unit = (info.size || 0) * FRACT[op.size];
+      if (unit > 0) q('UPDATE drinks SET soldMl = soldMl + ? WHERE id = ? AND bar_id = ?', Math.round(unit * n), String(op.drink), barId);
       break;
     }
     case 'add_debt': {
@@ -65,10 +69,35 @@ export function applyStatements(barId, op, now, sizeOf) {
       break;
     }
     case 'add_drink': {
-      q('INSERT OR IGNORE INTO drinks (id, bar_id, name, size, full, half, quarter, open, soldMl) VALUES (?,?,?,?,?,?,?,0,0)',
+      q('INSERT OR IGNORE INTO drinks (id, bar_id, name, size, full, half, quarter, open, soldMl, divisible, shot_ml, shot_price) VALUES (?,?,?,?,?,?,?,0,0,1,0,0)',
         String(op.id || 'd' + now).slice(0, 64), barId, String(op.name || 'Drink').slice(0, 60),
         Math.max(1, parseFloat(op.size) || 250),
         Math.max(0, Math.round(op.full || 0)), Math.max(0, Math.round(op.half || 0)), Math.max(0, Math.round(op.quarter || 0)));
+      break;
+    }
+    case 'restock': {
+      const qty = Math.max(1, Math.round(op.qty || 1));
+      const t = Math.round(op.t || now);
+      q('INSERT INTO restocks (id, bar_id, drink, qty, t) VALUES (?,?,?,?,?)',
+        String(op.id || 'r' + t + (op.drink || '')).slice(0, 64), barId, String(op.drink || ''), qty, t);
+      q('UPDATE drinks SET open = open + ? WHERE id = ? AND bar_id = ?', qty, String(op.drink || ''), barId);
+      break;
+    }
+    case 'set_drink_split': {
+      if (op.drink) q('UPDATE drinks SET divisible = ?, shot_ml = ?, shot_price = ? WHERE id = ? AND bar_id = ?',
+        op.divisible ? 1 : 0, Math.max(0, parseFloat(op.shot_ml) || 0), Math.max(0, Math.round(op.shot_price || 0)), String(op.drink), barId);
+      break;
+    }
+    case 'set_shift': {
+      const t = Math.round(op.t || now);
+      if (op.action === 'open') {
+        q('INSERT INTO shifts (id, bar_id, user_id, user_name, open_at) VALUES (?,?,?,?,?)',
+          String(op.id || 's' + t).slice(0, 64), barId, String(op.user_id || '').slice(0, 64), String(op.name || '').slice(0, 60), t);
+      } else if (op.action === 'close' && op.id) {
+        q('UPDATE shifts SET close_at = ?, close_counts = ?, close_cash = ?, close_mpesa = ?, close_deni = ? WHERE bar_id = ? AND id = ?',
+          t, JSON.stringify(op.counts || {}), Math.max(0, Math.round(op.close_cash || 0)),
+          Math.max(0, Math.round(op.close_mpesa || 0)), Math.max(0, Math.round(op.close_deni || 0)), barId, String(op.id));
+      }
       break;
     }
     case 'new_day': {
@@ -95,11 +124,18 @@ async function buildSizeOf(DB, barId, ops) {
   const drinkIds = [...new Set(ops.filter((o) => o.type === 'sale').map((o) => String(o.drink || '')))].filter(Boolean);
   if (drinkIds.length) {
     const ph = drinkIds.map(() => '?').join(',');
-    const rows = await DB.prepare(`SELECT id, size FROM drinks WHERE bar_id = ? AND id IN (${ph})`).bind(barId, ...drinkIds).all();
-    rows.results.forEach((r) => dbSizes.set(r.id, r.size));
+    const rows = await DB.prepare(`SELECT id, size, shot_ml FROM drinks WHERE bar_id = ? AND id IN (${ph})`).bind(barId, ...drinkIds).all();
+    rows.results.forEach((r) => dbSizes.set(r.id, { size: r.size, shot_ml: r.shot_ml || 0 }));
   }
   const batchSizes = new Map();
-  for (const op of ops) if (op.type === 'add_drink' && op.id) batchSizes.set(String(op.id), parseFloat(op.size) || 250);
+  for (const op of ops) {
+    if (op.type === 'add_drink' && op.id) batchSizes.set(String(op.id), { size: parseFloat(op.size) || 250, shot_ml: parseFloat(op.shot_ml) || 0 });
+    const splitId = op.type === 'set_drink_split' ? (op.id || op.drink) : null;
+    if (splitId) {
+      const prev = batchSizes.get(String(splitId)) || { size: 0 };
+      batchSizes.set(String(splitId), { size: prev.size || 250, shot_ml: parseFloat(op.shot_ml) || 0 });
+    }
+  }
   return (id) => (dbSizes.has(id) ? dbSizes.get(id) : batchSizes.get(id));
 }
 

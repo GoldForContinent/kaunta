@@ -427,13 +427,18 @@ nav{
   <div class="ov-card">
     <h2>Kaunta</h2>
     <p class="sub">The bar ledger that never sleeps.<br>30-day free trial · then KES 500 / month.</p>
+    <div class="seg" style="margin-bottom:14px" id="gatePath">
+      <div class="chip sel" data-p="staff">I work at a bar</div>
+      <div class="chip" data-p="owner">I own the bar</div>
+    </div>
+    <p class="mini" id="gateTip" style="margin:0 0 14px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04)"><b>Bartender?</b> Ask your owner for the 6-digit <b>join code</b>, then create your account below. Your sales are kept under your name.</p>
     <label class="lbl">Email</label>
     <input id="lgEmail" type="email" placeholder="you@bar.co.ke" autocomplete="email">
     <label class="lbl">Password</label>
     <div class="pw"><input id="lgPass" type="password" placeholder="••••••••" autocomplete="current-password"><button type="button" onclick="flipEye(this,'lgPass')">Show</button></div>
     <button class="btn primary" style="margin-top:2px" onclick="doLogin()">Log in</button>
     <div class="err" id="lgErr"></div>
-    <p class="mini">Forgot your password? A Kaunta systems admin can reset it for you from the admin console.</p>
+    <p class="mini" style="text-align:center"><span id="ownerHint" class="hidden"><b style="color:var(--gold)">Owner?</b> Your dashboard is at <a href="owner.html" style="color:var(--gold)">owner.html</a> →</span> Forgot your password? A Kaunta systems admin can reset it from the admin console.</p>
     <div class="divider">or</div>
     <button class="btn ghost" id="showSignup">Create a bar account</button>
   </div>
@@ -635,8 +640,9 @@ nav{
 
     <!-- STOCK -->
     <section id="view-stock" class="view hidden">
-      <h2>Stock · Opening Stock</h2>
-      <p class="sub">How many did you open with? Kaunta counts every pour against the shelf.</p>
+      <h2>Stock & Shift</h2>
+      <p class="sub">Opening stock, refills and expected money — counts against the shelf.</p>
+      <div id="shiftCard"></div>
       <div id="stockList"></div>
       <button class="btn ghost" onclick="openAddDrink()" style="margin-top:6px">+ Add drink</button>
       <button class="btn primary" onclick="newDay()" style="margin-top:10px">Start New Day · reset shift</button>
@@ -661,14 +667,14 @@ nav{
 <script>
 /* =============== DATA =============== */
 const FRACT = {full:1, half:0.5, quarter:0.25};
-const FR_LBL = {full:'Full', half:'Half', quarter:'Quarter'};
+const FR_LBL = {full:'Full', half:'Half', quarter:'Quarter', shot:'Shot'};
 const PL = {cash:'Cash', mpesa:'M-Pesa', deni:'Debt'};
 const DEF_DRINKS = [
-  {id:'kc', name:'Kenya Cane', size:250, full:350, half:175, quarter:90, open:10, soldMl:0},
-  {id:'kg', name:'Kibao Gin', size:250, full:250, half:130, quarter:70, open:8, soldMl:0},
-  {id:'sm', name:'Senator Keg', size:500, full:180, half:95, quarter:50, open:20, soldMl:0},
-  {id:'tb', name:'Tusker Lager', size:500, full:250, half:0, quarter:0, open:15, soldMl:0},
-  {id:'gt', name:'Gilbeys', size:750, full:950, half:500, quarter:260, open:4, soldMl:0},
+  {id:'kc', name:'Kenya Cane', size:250, full:350, half:175, quarter:90, open:10, soldMl:0, divisible:1, shot_ml:0, shot_price:0},
+  {id:'kg', name:'Kibao Gin', size:250, full:250, half:130, quarter:70, open:8, soldMl:0, divisible:1, shot_ml:0, shot_price:0},
+  {id:'sm', name:'Senator Keg', size:500, full:180, half:95, quarter:50, open:20, soldMl:0, divisible:1, shot_ml:0, shot_price:0},
+  {id:'tb', name:'Tusker Lager', size:500, full:250, half:0, quarter:0, open:15, soldMl:0, divisible:0, shot_ml:0, shot_price:0},
+  {id:'gt', name:'Gilbeys', size:750, full:950, half:500, quarter:260, open:4, soldMl:0, divisible:1, shot_ml:0, shot_price:0},
 ];
 const KEY='kaunta2', OLD_KEY='kengele2';
 let DB = {};
@@ -680,10 +686,21 @@ if(!DB){
   }catch(e){}
 }
 const save = ()=>localStorage.setItem(KEY, JSON.stringify(DB));
+function normDB(){
+  DB.restocks = DB.restocks||[];
+  DB.shifts  = DB.shifts||[];
+  (DB.drinks||[]).forEach(d=>{
+    if(d.divisible===undefined) d.divisible=(d.quarter>0||d.half>0)?1:0;
+    if(d.shot_ml===undefined) d.shot_ml=0;
+    if(d.shot_price===undefined) d.shot_price=0;
+  });
+  (DB.sales||[]).forEach(s=>{ if(!s.uid) s.uid=''; if(!s.staff) s.staff=''; });
+}
 if(!DB){
-  DB = {bar:'Mama Pima Gardens', drinks:DEF_DRINKS, sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false};
+  DB = {bar:'Mama Pima Gardens', drinks:DEF_DRINKS, sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false, restocks:[], shifts:[]};
   seed();
 }
+normDB();
 const kes = n=>'KES ' + Math.round(n).toLocaleString('en-KE');
 const todayStr = d=>{const x=d||new Date();return x.getFullYear()+'-'+(x.getMonth()+1)+'-'+x.getDate();};
 
@@ -730,26 +747,45 @@ function enqueue(type,payload){
 function applyRemote(type,p){
   switch(type){
     case 'sale': {
-      DB.sales.push({t:p.t,drink:p.drink,size:p.size,qty:p.qty,price:p.price,pay:p.pay,who:p.who||''});
+      DB.sales.push({t:p.t,drink:p.drink,size:p.size,qty:p.qty,price:p.price,pay:p.pay,who:p.who||'',uid:p.uid||'',staff:p.staff||''});
       if(p.pay==='deni'&&p.who){ DB.debts[p.who]=(DB.debts[p.who]||0)+p.price; addReg(p.who); }
       const d=DB.drinks.find(x=>x.id===p.drink);
-      if(d&&FRACT[p.size]!=null) d.soldMl+=Math.round(d.size*FRACT[p.size]*p.qty);
+      if(d&&pourMl(d,p.size,p.qty)) d.soldMl+=pourMl(d,p.size,p.qty);
       break;
     }
     case 'add_debt': {
       DB.debts[p.who]=Math.max(1,(DB.debts[p.who]||0)+p.amount); addReg(p.who);
-      DB.sales.push({t:p.t||Date.now(),drink:'_deni',size:'',qty:1,price:p.amount,pay:'deni',who:p.who});
+      DB.sales.push({t:p.t||Date.now(),drink:'_deni',size:'',qty:1,price:p.amount,pay:'deni',who:p.who,uid:p.uid||'',staff:p.staff||''});
       break;
     }
     case 'debt_payment': {
       DB.debts[p.who]=Math.max(0,(DB.debts[p.who]||0)-p.amount);
-      DB.sales.push({t:p.t||Date.now(),drink:'_pay',size:'',qty:1,price:p.amount,pay:'cash',who:p.who});
+      DB.sales.push({t:p.t||Date.now(),drink:'_pay',size:'',qty:1,price:p.amount,pay:'cash',who:p.who,uid:p.uid||'',staff:p.staff||''});
       break;
     }
     case 'set_open': { const d=DB.drinks.find(x=>x.id===p.drink); if(d) d.open=p.open; break; }
-    case 'set_price': { const d=DB.drinks.find(x=>x.id===p.drink); if(d&&['full','half','quarter'].indexOf(p.k)>-1) d[p.k]=p.v; break; }
+    case 'set_price': { const d=DB.drinks.find(x=>x.id===p.drink); if(d&&['full','half','quarter','shot_price'].indexOf(p.k)>-1) d[p.k]=p.v; break; }
     case 'add_drink': {
-      if(!DB.drinks.find(x=>x.id===p.id)) DB.drinks.push({id:p.id,name:p.name,size:p.size,full:p.full,half:p.half,quarter:p.quarter,open:0,soldMl:0});
+      if(!DB.drinks.find(x=>x.id===p.id)) DB.drinks.push({id:p.id,name:p.name,size:p.size,full:p.full,half:p.half,quarter:p.quarter,open:0,soldMl:0,divisible:1,shot_ml:0,shot_price:0});
+      break;
+    }
+    case 'restock': {
+      const d=DB.drinks.find(x=>x.id===p.drink);
+      if(d){ d.open+=Math.max(1,Math.round(p.qty||1)); DB.restocks.push({drink:p.drink,qty:p.qty,t:p.t||Date.now()}); }
+      break;
+    }
+    case 'set_drink_split': {
+      const d=DB.drinks.find(x=>x.id===p.drink);
+      if(d){ d.divisible=p.divisible?1:0; d.shot_ml=parseFloat(p.shot_ml)||0; d.shot_price=Math.round(p.shot_price)||0; }
+      break;
+    }
+    case 'set_shift': {
+      if(p.action==='open'){
+        DB.shifts.push({id:p.id,user_id:p.user_id,user_name:p.name,open_at:p.t,close_at:null});
+      }else if(p.action==='close'){
+        const sh=DB.shifts.find(x=>x.id===p.id);
+        if(sh){ sh.close_at=p.t; sh.close_counts=p.counts||{}; sh.close_total=p.close_total||0; sh.close_cash=p.close_cash||0; sh.close_mpesa=p.close_mpesa||0; sh.close_deni=p.close_deni||0; }
+      }
       break;
     }
     case 'new_day': DB.drinks.forEach(x=>x.soldMl=0); DB.open=p.t||Date.now(); break;
@@ -827,6 +863,16 @@ function show(id){
   document.body.classList.toggle('lock', any);
 }
 function initGate(){
+  document.querySelectorAll('#gatePath .chip').forEach(c=>c.onclick=()=>{
+    document.querySelectorAll('#gatePath .chip').forEach(x=>x.classList.toggle('sel',x===c));
+    const staff=c.dataset.p==='staff';
+    document.getElementById('gateTip').innerHTML = staff
+      ? '<b>Bartender?</b> Ask your owner for the 6-digit <b>join code</b>, then create your account below. Your sales are kept under your name.'
+      : '<b>Owner?</b> Create your bar account below, then share the 6-digit <b>join code</b> (Settings → Join code) with your bartenders. Your dashboard is at <b>owner.html</b>.';
+    document.getElementById('ownerHint').classList.toggle('hidden', staff);
+    const codeWrap=document.getElementById('suCodeWrap');
+    if(codeWrap){ document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel', x.dataset.m===c.dataset.p)); codeWrap.classList.toggle('hidden', !staff); }
+  });
   document.getElementById('showSignup').onclick=()=>{ document.getElementById('suName').value=DB&&DB.bar?DB.bar:''; show('signup'); };
   document.getElementById('backLogin').onclick=()=>show('gate');
   document.querySelectorAll('#suMode .chip').forEach(c=>c.onclick=()=>{
@@ -894,7 +940,7 @@ async function afterAuth(reconnect){
 async function migrateToCloud(){
   const ops=[];
   ops.push({type:'set_bar',name:DB.bar});
-  DB.drinks.forEach(d=>ops.push({type:'add_drink',id:d.id,name:d.name,size:d.size,full:d.full,half:d.half,quarter:d.quarter}));
+  DB.drinks.forEach(d=>ops.push({type:'add_drink',id:d.id,name:d.name,size:d.size,full:d.full,half:d.half,quarter:d.quarter,divisible:d.divisible,shot_ml:d.shot_ml,shot_price:d.shot_price}));
   DB.drinks.forEach(d=>ops.push({type:'set_open',drink:d.id,open:d.open}));
   ops.push({type:'new_day'});
   Object.entries(DB.debts||{}).filter(([,v])=>v>0).forEach(([w,v])=>ops.push({type:'add_debt',who:w,amount:v}));
@@ -1023,10 +1069,10 @@ function seed(){
   const now=Date.now();
   const mk=(dId,size,pay,who,ago,qty=1,dofs=0)=>{
     const d=DB.drinks.find(x=>x.id===dId); if(!d) return;
-    const price=(size==='full'?d.full: size==='half'?d.half: d.quarter)*qty;
-    d.soldMl += d.size*FRACT[size]*qty;
+    const price=(size==='full'?d.full: size==='half'?d.half: size==='shot'?d.shot_price: d.quarter)*qty;
+    d.soldMl += pourMl(d,size,qty);
     const t = new Date(now-ago*60000); t.setDate(t.getDate()+dofs);
-    DB.sales.push({t:+t, drink:dId, size, qty, price, pay, who:who||''});
+    DB.sales.push({t:+t, drink:dId, size, qty, price, pay, who:who||'', uid:'', staff:''});
     if(pay==='deni' && who){ DB.debts[who]=(DB.debts[who]||0)+price; addReg(who); }
   };
   mk('kc','half','cash','',430); mk('kc','quarter','mpesa','',370);
@@ -1050,7 +1096,7 @@ function go(v){
   else if(v==='sell'){ renderSell(); updChips(); }
   else if(v==='deni') renderDeni();
   else if(v==='hist'){ renderHist(); }
-  else if(v==='stock') renderStock();
+  else if(v==='stock'){ renderStock(); renderShift(); }
 }
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click', ()=>go(b.dataset.view)));
 
@@ -1073,17 +1119,33 @@ function renderSell(){
 }
 function updChips(){
   const d=DB.drinks.find(x=>x.id===S.drink)||{};
+  const hasShot=d.shot_ml>0 && d.shot_price>0;
+  const sizes=['full','half','quarter'];
+  if(hasShot) sizes.push('shot');
+  const wrap=document.getElementById('sizeChips');
+  wrap.innerHTML='';
+  const avail=[];
+  sizes.forEach(s=>{
+    const p=drinkPrice(d,s);
+    if(p>0) avail.push(s);
+    const c=document.createElement('div');
+    c.className='chip'; c.dataset.size=s;
+    c.innerHTML=(FR_LBL[s]||s)+'<small>'+ (p?kes(p):'—') +'</small>';
+    c.onclick=()=>{S.size=s;updChips();};
+    wrap.appendChild(c);
+  });
+  if(S.size!=='shot'&&!d[S.size]) S.size=avail[0]||'full';
+  if(S.size==='shot'&&!hasShot) S.size=avail[0]||'full';
   document.querySelectorAll('#sizeChips .chip').forEach(c=>{
-    const s=c.dataset.size, p=d[s];
+    const s=c.dataset.size, p=drinkPrice(d,s);
     c.classList.toggle('off', p===0||p===undefined);
     c.classList.toggle('sel', s===S.size && p>0);
-    c.querySelector('small').textContent = p? kes(p):'—';
   });
   document.querySelectorAll('#payRow .chip').forEach(c=>c.classList.toggle('sel', c.dataset.pay===S.pay));
   const w=document.getElementById('debtNameWrap');
   w.classList.toggle('hidden', S.pay!=='deni');
   if(S.pay==='deni') renderRegs();
-  const amt=(d[S.size]||0)*S.qty;
+  const amt=drinkPrice(d,S.size)*S.qty;
   document.getElementById('sellBtn').textContent = S.pay==='deni' ? `DEBT · ${kes(amt)}` : (S.pay==='mpesa'? 'M-PESA · ': 'CASH · ') + kes(amt);
 }
 document.querySelectorAll('#sizeChips .chip').forEach(c=>c.onclick=()=>{S.size=c.dataset.size;updChips();});
@@ -1107,18 +1169,18 @@ function addReg(n){ DB.regs[n]=(DB.regs[n]||0)+1; }
 
 document.getElementById('sellBtn').onclick=()=>{
   const d=DB.drinks.find(x=>x.id===S.drink);
-  const price=(d[S.size]||0);
-  if(!price) return toast('No '+S.size+' price set for this one');
-  if((Ml(d)*d.open - d.soldMl) < Ml(d)*FRACT[S.size]*S.qty - 0.5)
+  const price=drinkPrice(d,S.size);
+  if(!price) return toast('No '+FR_LBL[S.size]+' price set for this one');
+  if((Ml(d)*d.open - d.soldMl) < pourMl(d,S.size,S.qty) - 0.5)
     return toast(d.name+' — not enough stock');
   let who=S.who.trim();
   if(S.pay==='deni' && !who) return toast('Write the customer name');
   const amt=price*S.qty;
   if(S.pay==='deni'){ DB.debts[who]=(DB.debts[who]||0)+amt; addReg(who); }
-  d.soldMl += Ml(d)*FRACT[S.size]*S.qty;
-  DB.sales.push({t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:''});
+  d.soldMl += pourMl(d,S.size,S.qty);
+  DB.sales.push({t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:'', uid:PROFILE?PROFILE.id:'', staff:PROFILE?PROFILE.name:''});
   save();
-  enqueue('sale',{t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:''});
+  enqueue('sale',{t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:'', uid:PROFILE?PROFILE.id:'', staff:PROFILE?PROFILE.name:''});
   flash(amt, d.name+' · '+FR_LBL[S.size]+' · '+S.qty+' × '+(S.pay==='deni'?who:S.pay));
   chime();
   updChips(); renderSell(); renderDash();
@@ -1183,15 +1245,27 @@ function renderDash(){
   }
   if(!al.innerHTML) al.innerHTML=`<div class="alert ok"><div class="sig">${IC('shield')}</div><div><h4>Everything adds up</h4><p>Sales, stock and payments all in sync. Keep the counter ticking, Boss.</p></div></div>`;
 
-  /* stock check */
-  document.getElementById('stockCheck').innerHTML = DB.drinks.map(d=>{
+  /* stock check — expected money band (min = all whole, max = all subdivided) */
+  const t2=todaySales();
+  const exp={min:0,max:0,book:0};
+  const stockRows=DB.drinks.map(d=>{
+    const soldB=d.soldMl/Ml(d), band=drinkBand(d,soldB);
+    const book=t2.filter(s=>s.drink===d.id).reduce((a,s)=>a+s.price,0);
+    exp.min+=band.min; exp.max+=band.max; exp.book+=book;
     const total=Ml(d)*d.open, left=Math.max(0,total-d.soldMl), pct=Math.max(0,left/total*100);
     const cls=left<=0?'red':(pct<25?'grn':'');
+    const out=(book<band.min-1)||(book>band.max+1);
     return `<div style="margin-bottom:12px"><div class="row" style="border:none;padding:3px 0">
-      <div class="l"><b style="font-size:13.5px">${d.name}</b><span>${left.toFixed(0)} / ${total} ml</span></div>
-      <div class="r" style="font-family:var(--serif);font-weight:700;color:${cls==='red'?'var(--ember)':'var(--gold)'}">${(left/Ml(d)).toFixed(1)} bots</div></div>
+      <div class="l"><b style="font-size:13.5px">${d.name}</b><span>${left.toFixed(0)} / ${total} ml left</span></div>
+      <div class="r" style="text-align:right"><div style="font-family:var(--serif);font-weight:800;font-size:12.5px;color:var(--gold)">KES ${band.min} – ${band.max}</div>
+      <div class="mini" style="margin:0;line-height:1.3">ledger ${kes(book)}${out?' <span style="color:var(--ember)">· OFF!</span>':''}</div></div></div>
       <div class="gauge"><i class="${cls}" style="width:${pct}%"></i></div></div>`;
   }).join('');
+  const expOut=(exp.book<exp.min-1)||(exp.book>exp.max+1);
+  document.getElementById('stockCheck').innerHTML=
+    `<div class="subrow"><span>Expected today</span><b class="money">KES ${exp.min} – ${exp.max}</b></div>
+     <div class="subrow"><span>Recorded on ledger</span><b ${expOut?'style="color:var(--ember)"':''}>${kes(exp.book)}</b></div>
+     <div style="margin:6px 0 2px;height:1px;background:var(--line)"></div>`+stockRows;
 
   /* top movers (skip internal pay/deni ledger entries) */
   const real = t.filter(s=>DB.drinks.some(x=>x.id===s.drink));
@@ -1211,7 +1285,7 @@ function renderDash(){
     const tm=new Date(s.t);
     const lbl=isT? (tm.getHours().toString().padStart(2,'0'))+':'+(tm.getMinutes().toString().padStart(2,'0')) : 'yesterday';
     return `<div class="row"><div class="l"><b>${d.name} <span class="tag ${s.size}">${FR_LBL[s.size]}</span></b>
-      <span>${lbl} · ${s.who||'over counter'}</span></div>
+      <span>${lbl} · ${s.staff||s.who||'over counter'}</span></div>
       <div class="r"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
       <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span></div></div>`;
   }).join('');
@@ -1270,7 +1344,7 @@ function doPay(){
   const amt=Math.max(0,Math.round(parseFloat(document.getElementById('payAmt').value)||0));
   if(!amt) return;
   DB.debts[who]=Math.max(0, DB.debts[who]-amt);
-  DB.sales.push({t:Date.now(), drink:'_pay', size:'', qty:1, price:amt, pay:'cash', who, note:'Debt payment'});
+  DB.sales.push({t:Date.now(), drink:'_pay', size:'', qty:1, price:amt, pay:'cash', who, note:'Debt payment', uid:PROFILE?PROFILE.id:'', staff:PROFILE?PROFILE.name:''});
   save(); enqueue('debt_payment',{who,amount:amt}); closeSheet(); toast(who+' paid '+kes(amt)); chime();
   renderDeni(); renderDash();
 }
@@ -1294,7 +1368,7 @@ function addDeni(){
   if(!n) return toast('Write the name');
   if(a<=0) return toast('Amount must be > 0');
   DB.debts[n]=(DB.debts[n]||0)+a; addReg(n);
-  DB.sales.push({t:Date.now(), drink:'_deni', size:'', qty:1, price:a, pay:'deni', who:n, note:'Add debt'});
+  DB.sales.push({t:Date.now(), drink:'_deni', size:'', qty:1, price:a, pay:'deni', who:n, note:'Add debt', uid:PROFILE?PROFILE.id:'', staff:PROFILE?PROFILE.name:''});
   save(); enqueue('add_debt',{who:n,amount:a}); closeSheet(); toast(n+' + '+kes(a)); renderDeni(); renderDash();
 }
 
@@ -1325,7 +1399,7 @@ function renderHist(){
       const tm=new Date(s.t);
       const tmm=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0');
       return `<div class="row"><div class="l"><b>${d?d.name:'Loading…'} ${s.size?'<span class="tag '+s.size+'">'+FR_LBL[s.size]+'</span>':''}${s.qty>1?'  <span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">×'+s.qty+'</span>':''}</b>
-        <span>${tmm} · ${s.who||'over counter'}</span></div>
+        <span>${tmm} · ${s.staff||s.who||'over counter'}</span></div>
         <div class="r"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
         <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span></div></div>`;
     }).join('');
@@ -1336,11 +1410,29 @@ function renderHist(){
 
 /* =============== STOCK ============ */
 function Ml(d){ return parseFloat(d.size); }
+function pourMl(d,size,qty){ qty=Math.max(1,Math.round(qty||1)); return size==='shot'? Math.round((d.shot_ml||0)*qty) : Math.round(Ml(d)*FRACT[size]*qty); }
+function drinkPrice(d,size){ return size==='shot'? (d.shot_price||0) : (d[size]||0); }
+/* most a single bottle can earn if fully subdivided (quarter or shots) */
+function bottleMax(d){
+  if(!d.divisible) return 0;
+  const byQ=(d.quarter||0)>0 ? 4*d.quarter : 0;
+  const byS=(d.shot_ml>0&&d.shot_price>0)? Math.floor(Ml(d)/d.shot_ml)*d.shot_price :0;
+  return Math.max(byQ,byS,0) || 0;
+}
+/* expected revenue band for N(=fractional) bottles */
+function drinkBand(d, bottles){
+  const min=Math.round(bottles*(d.full||0));
+  const mx=bottleMax(d)>0? Math.round(bottles*bottleMax(d)) : min;
+  return {min, max:Math.max(min,mx)};
+}
 function renderStock(){
+  const todayRest=d=>DB.restocks.filter(r=>r.drink===d.id && todayStr(new Date(r.t))===todayStr()).reduce((a,r)=>a+r.qty,0);
   document.getElementById('stockList').innerHTML = DB.drinks.map(d=>{
     const total=Ml(d)*d.open, left=Math.max(0,total-d.soldMl);
+    const splitTag = !d.divisible ? '<span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">whole only</span>'
+      : d.shot_ml>0? `<span class="tag quarter">${d.shot_ml}ml shots</span>` : '<span class="tag half">divisible</span>';
     return `<div class="card">
-      <div class="row" style="border:none;padding:0 0 4px"><b style="font-size:15.5px">${d.name}</b><span class="tag half">${d.size} ml</span></div>
+      <div class="row" style="border:none;padding:0 0 4px"><b style="font-size:15.5px">${d.name}</b>${splitTag}</div>
       <div class="rowflex" style="margin-top:10px">
         <div><label class="lbl">Opening bottles</label>
           <div class="stepper">
@@ -1355,9 +1447,114 @@ function renderStock(){
           </div>
         </div>
       </div>
-      <div class="mini">Expected left: <b>${(left/Ml(d)).toFixed(1)} bottles</b> · sold <b>${(d.soldMl/Ml(d)).toFixed(1)}</b> ${d.soldMl>total?'<span style="color:var(--ember)">· OVER!</span>':''}</div>
+      <div class="mini">Expected left: <b>${(left/Ml(d)).toFixed(1)} bottles</b> · sold <b>${(d.soldMl/Ml(d)).toFixed(1)}</b>${todayRest(d)?' · restocked <b>+'+todayRest(d)+'</b>':''} ${d.soldMl>total?'<span style="color:var(--ember)">· OVER!</span>':''}</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn small ghost" style="flex:1" onclick="openRestock('${d.id}')">+ Received stock</button>
+        <button class="btn small ghost" style="flex:1" onclick="openSplit('${d.id}')">Split / shots</button>
+      </div>
     </div>`;
   }).join('');
+}
+function openRestock(id){
+  const d=DB.drinks.find(x=>x.id===id);
+  openSheet(`
+    <h3 class="serif">Received stock · ${esc(d.name)}</h3>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Tell Kaunta how many bottles you just received. Expected stock and expected money recalculate automatically.</p>
+    <label class="lbl">Bottles received</label>
+    <input id="rsQty" type="number" value="1" min="1">
+    <button class="btn primary" onclick="doRestock('${id}')">Log received stock</button>
+  `);
+}
+function doRestock(id){
+  const q=Math.max(1,Math.round(parseFloat(document.getElementById('rsQty').value)||0));
+  const d=DB.drinks.find(x=>x.id===id); if(!d) return;
+  d.open+=q; DB.restocks.push({drink:id,qty:q,t:Date.now()});
+  save(); enqueue('restock',{drink:id,qty:q,t:Date.now()}); closeSheet();
+  toast(d.name+' +'+q+' bottles'); renderStock(); renderDash();
+}
+function openSplit(id){
+  const d=DB.drinks.find(x=>x.id===id);
+  openSheet(`
+    <h3 class="serif">Split options · ${esc(d.name)}</h3>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Is this bottle sold in subdivisions or shots? This sets the top of the expected-money range per bottle.</p>
+    <div class="ctlbl" style="margin-top:0">Can be divided?</div>
+    <div class="seg" id="divSeg">
+      <div class="chip sel" data-v="1">Yes · split</div>
+      <div class="chip" data-v="0">No · whole only</div>
+    </div>
+    <div class="ctlbl">Shot glass size (ml)</div>
+    <input id="spShotMl" type="number" value="${d.shot_ml||''}" placeholder="e.g. 30 or 50 — leave 0 to turn off">
+    <div class="ctlbl">Price per shot (KES)</div>
+    <input id="spShotPr" type="number" value="${d.shot_price||''}" placeholder="0 = no shots sold">
+    <p class="mini" style="margin-top:0">Example: a ${d.size} ml bottle at ${d.shot_ml>0?d.shot_ml:'30'} ml per shot = up to <b>${d.shot_ml>0?Math.floor(d.size/d.shot_ml)*d.shot_price:'—'}</b> KES per bottle if all shots.</p>
+    <button class="btn primary" onclick="saveSplit('${id}')">Save split options</button>
+  `);
+  document.querySelectorAll('#divSeg .chip').forEach(c=>c.onclick=()=>{
+    document.querySelectorAll('#divSeg .chip').forEach(x=>x.classList.toggle('sel',x===c));
+  });
+  document.querySelectorAll('#divSeg .chip').forEach(c=>c.classList.toggle('sel', c.dataset.v===''+(d.divisible?1:0)));
+}
+function saveSplit(id){
+  const d=DB.drinks.find(x=>x.id===id); if(!d) return;
+  const div=document.querySelector('#divSeg .chip.sel').dataset.v==='1'?1:0;
+  const ml=Math.max(0,parseFloat(document.getElementById('spShotMl').value)||0);
+  const pr=Math.max(0,Math.round(parseFloat(document.getElementById('spShotPr').value)||0));
+  d.divisible=div; d.shot_ml=ml; d.shot_price=pr;
+  save(); enqueue('set_drink_split',{drink:id,divisible:div,shot_ml:ml,shot_price:pr});
+  closeSheet(); toast('Split options saved'); renderStock(); renderDash();
+}
+/* ---- shift ---- */
+function openShift(){ return [...DB.shifts].reverse().find(s=>s && !s.close_at); }
+function renderShift(){
+  const el=document.getElementById('shiftCard'); if(!el) return;
+  const s=openShift();
+  if(s){
+    const mins=Math.max(0,Math.round((Date.now()-s.open_at)/60000));
+    el.innerHTML=`<div class="card">
+      <div class="cardhead"><svg class="ic ic-s"><use href="#i-clock"/></svg>Shift on — ${esc(s.user_name||'you')}</div>
+      <div class="subrow"><span>Opened</span><b>${new Date(s.open_at).toLocaleTimeString('en-KE',{hour:'2-digit',minute:'2-digit'})}</b></div>
+      <div class="subrow"><span>Duration</span><b id="shDur">${Math.floor(mins/60)}h ${mins%60}m</b></div>
+      <button class="btn ghost" style="margin-top:10px;color:var(--ember)" onclick="endShift()">Hand over · end my shift</button>
+    </div>`;
+  }else{
+    el.innerHTML=`<div class="card">
+      <div class="cardhead"><svg class="ic ic-s"><use href="#i-clock"/></svg>Shift</div>
+      <p class="mini" style="margin-top:0">No shift is open. Tap "Start my shift" so every sale is kept under your name — the owner sees exactly who sold what.</p>
+      <button class="btn primary" style="margin-top:10px" onclick="startShift()">Start my shift</button>
+    </div>`;
+  }
+}
+function startShift(){
+  if(openShift()) return toast('A shift is already open on this phone');
+  if(!PROFILE) return toast('Log in first — you need an account to start a shift');
+  const id=oid();
+  DB.shifts.push({id, user_id:PROFILE.id, user_name:PROFILE.name, open_at:Date.now(), close_at:null});
+  save(); enqueue('set_shift',{action:'open',id,user_id:PROFILE.id,name:PROFILE.name,t:Date.now()});
+  renderShift(); renderDash(); toast('Shift started — '+PROFILE.name);
+}
+function endShift(){
+  const s=openShift(); if(!s) return toast('No open shift');
+  openSheet(`
+    <h3 class="serif">Hand over · ${esc(s.user_name||'this shift')}</h3>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Count the till now and type the amounts — the owner compares them against the shift's sales.</p>
+    <label class="lbl">Cash in till (KES)</label>
+    <input id="hoCash" type="number" placeholder="0">
+    <label class="lbl">M-Pesa received (KES)</label>
+    <input id="hoMpesa" type="number" placeholder="0">
+    <label class="lbl">Debt outstanding (KES)</label>
+    <input id="hoDeni" type="number" placeholder="0">
+    <button class="btn primary" onclick="doEndShift()">Hand over now</button>
+  `);
+}
+function doEndShift(){
+  const s=openShift(); if(!s){ closeSheet(); return; }
+  const cash=Math.max(0,Math.round(parseFloat(document.getElementById('hoCash').value)||0));
+  const mpesa=Math.max(0,Math.round(parseFloat(document.getElementById('hoMpesa').value)||0));
+  const deni=Math.max(0,Math.round(parseFloat(document.getElementById('hoDeni').value)||0));
+  const t=Date.now();
+  s.close_at=t; s.close_cash=cash; s.close_mpesa=mpesa; s.close_deni=deni;
+  save(); enqueue('set_shift',{action:'close',id:s.id,t,close_cash:cash,close_mpesa:mpesa,close_deni:deni,counts:{}});
+  closeSheet(); renderShift(); renderDash(); toast('Shift handed over');
 }
 function setOpen(id,n){
   const d=DB.drinks.find(x=>x.id===id);
@@ -1390,16 +1587,18 @@ function addDrink(){
   const id='d'+Date.now();
   const dd={id, name:n, size:Math.max(50,parseFloat(document.getElementById('ndSize').value)||250),
     full:+document.getElementById('ndFull').value||0, half:+document.getElementById('ndHalf').value||0, quarter:+document.getElementById('ndQ').value||0,
-    open:0, soldMl:0};
+    open:0, soldMl:0, divisible:1, shot_ml:0, shot_price:0};
   DB.drinks.push(dd);
-  save(); enqueue('add_drink',{id,name:n,size:dd.size,full:dd.full,half:dd.half,quarter:dd.quarter});
+  save(); enqueue('add_drink',{id,name:n,size:dd.size,full:dd.full,half:dd.half,quarter:dd.quarter,divisible:1,shot_ml:0,shot_price:0});
   closeSheet(); toast(n+' added to the list'); renderStock(); renderSell();
 }
 function newDay(){
-  if(!confirm('Start a new day?\nSales stay in history, stock resets.')) return;
+  if(!confirm('Start a new day?\nSales stay in history, stock resets and any open shift is handed over.')) return;
+  const s0=openShift();
+  if(s0){ s0.close_at=Date.now(); enqueue('set_shift',{action:'close',id:s0.id,t:Date.now()}); }
   DB.drinks.forEach(d=>d.soldMl=0);
   DB.open=Date.now();
-  save(); enqueue('new_day'); toast('New day started. Ready to sell!'); renderStock(); renderDash();
+  save(); enqueue('new_day'); toast('New day started. Ready to sell!'); renderStock(); renderShift(); renderDash();
 }
 
 /* =============== SETTINGS ============ */
@@ -1480,7 +1679,7 @@ function saveBar(){
 function wipeAll(){
   if(!confirm('Erase ALL data and start fresh?')) return;
   localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY);
-  DB={bar:'Mama Pima Gardens', drinks:DEF_DRINKS.map(d=>({...d})), sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false};
+  DB={bar:'Mama Pima Gardens', drinks:DEF_DRINKS.map(d=>({...d})), sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false, restocks:[], shifts:[]};
   save(); closeSheet(); go('dash'); renderDash(); renderStock(); toast('Fresh start. Tap the counter!');
 }
 
@@ -1530,6 +1729,8 @@ function tick(){
   const elapsed=Date.now()-DB.open;
   const h=Math.floor(elapsed/3600000), m=Math.floor((elapsed%3600000)/60000);
   document.getElementById('shiftTime').textContent=(h>0?h+'h ':'')+m+'m';
+  const shd=document.getElementById('shDur'), s0=openShift();
+  if(shd&&s0){ const sm=Math.max(0,Math.round((Date.now()-s0.open_at)/60000)); shd.textContent=Math.floor(sm/60)+'h '+sm%60+'m'; }
   const hh=now.getHours();
   const g=(hh<12?'Good morning':hh<17?'Good afternoon':'Good evening');
   document.getElementById('greet').innerHTML=g+', <span class="em">Boss.</span>';
