@@ -45,6 +45,8 @@ header{position:sticky;top:0;z-index:50;background:rgba(11,13,10,.78);backdrop-f
 .nav .links{margin-left:auto;display:flex;align-items:center;gap:18px;font-size:12.5px;font-weight:700;color:var(--dim)}
 .nav .links a{color:var(--dim);text-decoration:none}
 .nav .links a:hover{color:var(--gold)}
+.nav .links a.lbtn{color:var(--gold);border:1px solid rgba(233,185,92,.4);background:rgba(233,185,92,.08);padding:8px 15px;border-radius:10px}
+.nav .links a.lbtn:hover{color:var(--gold2);background:rgba(233,185,92,.16)}
 .btn{display:inline-flex;align-items:center;gap:8px;border:none;border-radius:13px;font-weight:800;font-size:14px;cursor:pointer;text-decoration:none;padding:15px 22px;transition:transform .1s,filter .15s}
 .btn:active{transform:scale(.97)}
 .btn.primary{background:linear-gradient(150deg,#ffd98a,#e9a73b 55%,#c47a1f);color:#211407;box-shadow:0 10px 30px rgba(233,169,59,.32)}
@@ -154,6 +156,7 @@ footer a{color:var(--gold);text-decoration:none}
       <a href="#features">Features</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
+      <a class="lbtn" href="kaunta.html">Log in</a>
     </nav>
   </div>
 </header>
@@ -165,7 +168,7 @@ footer a{color:var(--gold);text-decoration:none}
     <p class="lede">Kaunta is the counter app for small Kenyan bars. Cash, M-Pesa and "deni" in a single tap — recorded instantly on the phone, synced to the cloud when the network allows, and watched live by the owner from anywhere.</p>
     <div class="cta">
       <a class="btn primary cta-app" href="kaunta.html">Install the app on this phone</a>
-      <a class="btn ghost" href="owner.html">Owner dashboard</a>
+      <a class="btn ghost" href="kaunta.html">Log in or create an account</a>
     </div>
     <div class="mini">Free 30-day trial · then <b>KES 500/month</b> via M-Pesa</div>
 
@@ -220,7 +223,7 @@ footer a{color:var(--gold);text-decoration:none}
     <div class="grid3">
       <div class="card" style="--glow:rgba(63,174,90,.16)"><div class="ic grn"><svg viewBox="0 0 24 24"><path d="M1 1h6v8M21 23h-6v-8"/><path d="M1 1H2a13 13 0 0 0 13 13v4"/><path d="M21 23H20a13 13 0 0 0-13-13v-4"/></svg></div><h3>Works without internet</h3><p>Every tap is saved on the phone first. When a connection appears, Kaunta syncs automatically — nothing lost, nothing double-counted.</p></div>
       <div class="card" style="--glow:rgba(233,185,92,.16)"><div class="ic gold"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg></div><h3>Cash, M-Pesa & deni</h3><p>Track every sale by payment type. Debt automatically builds per customer, and the owner can watch it grow in real time.</p></div>
-      <div class="card" style="--glow:rgba(255,92,56,.16)"><div class="ic r"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 12 8 8M12 3v9M21 3v6h-6"/></svg></div><h3>Live from anywhere</h3><p>The owner opens owner.html and sees today's take, the heat of the evening, stock vs. sold and the debt ledger — while at home or at the market.</p></div>
+      <div class="card" style="--glow:rgba(255,92,56,.16)"><div class="ic r"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 12 8 8M12 3v9M21 3v6h-6"/></svg></div><h3>Live from anywhere</h3><p>The owner opens the owner dashboard and sees today's take, the heat of the evening, stock vs. sold and the debt ledger — while at home or at the market.</p></div>
     </div>
   </section>
 
@@ -306,7 +309,7 @@ footer a{color:var(--gold);text-decoration:none}
     <h2>Ready for a counter that counts?</h2>
     <p>Free for 30 days. Cancel by simply not renewing.</p>
     <a class="btn primary cta-app" href="kaunta.html">Install Kaunta on this phone</a>
-    <div style="margin-top:14px;font-size:12px;color:var(--dim)"><a href="owner.html">Owner dashboard</a> · <a href="admin.html" style="color:rgba(154,145,124,.4)">Systems</a></div>
+    <div style="margin-top:14px;font-size:12px;color:var(--dim)"><a href="kaunta.html">Log in</a> · <a href="admin.html" style="color:rgba(154,145,124,.4)">Systems</a></div>
   </section>
 </main>
 

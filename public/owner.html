@@ -124,7 +124,8 @@ input:focus{border-color:var(--gold)}
     <div class="mark"><svg viewBox="0 0 24 24"><path d="M6 3v18M9.5 3v18M13 3v18M16.5 3v14" stroke-width="1.8"/><path d="m16.5 3-10.5 18" stroke-width="1.8"/></svg></div>
     <div class="brand"><span id="barName">Kaunta</span><small>Owner · Bar Ledger</small></div>
     <div class="pill2 gold" id="joinPill" title="Share this code with your bartenders" onclick="copyJoin()" style="cursor:pointer">JOIN&nbsp;<b id="joinCode" style="letter-spacing:2px">—</b></div>
-    <div class="gear" onclick="logout()" title="Log out">&#10008;</div>
+    <a class="pill2" href="kaunta.html" title="Open the counter app on this phone" style="text-decoration:none;flex:none;white-space:nowrap">Counter app</a>
+    <div class="gear" onclick="logout()" title="Log out of all Kaunta apps">&#10008;</div>
   </div></header>
   <div id="announce" class="hidden"></div>
   <main id="main" class="hidden">
@@ -178,17 +179,12 @@ input:focus{border-color:var(--gold)}
 </div>
 
 <!-- gate -->
-<div id="gate" class="overlay">
-  <div class="ov-card scrimless">
+<div id="gate" class="overlay hidden">
+  <div class="ov-card scrimless" style="text-align:center">
     <h2>Kaunta · Owner</h2>
-    <p class="sub">The owner's view — real-time sales, stock-take with expected money, staff shifts and handovers.<br><b>Bartenders</b> use the Kaunta counter app on the bar's phone to ring sales and start their shifts.</p>
-    <label class="lbl">Email</label>
-    <input id="lgEmail" type="email" placeholder="owner@bar.co.ke">
-    <label class="lbl">Password</label>
-    <div class="pw"><input id="lgPass" type="password" placeholder="••••••••"><button type="button" onclick="flipEye(this,'lgPass')">Show</button></div>
-    <div class="err" id="lgErr"></div>
-    <button class="btn primary" onclick="doLogin()">Log in</button>
-    <p class="mini" style="text-align:center">Trial 30 days · then KES 500 / month<br><span id="apiNote" style="color:var(--gold)"></span></p>
+    <p class="sub">Taking you to the Kaunta sign-in&hellip;</p>
+    <p class="mini" id="gateNote">One account signs in everywhere &mdash; pick <b>bartender</b> or <b>owner</b> there and you will come straight back here.</p>
+    <p class="mini"><a href="kaunta.html?next=owner.html" style="color:var(--gold)">Open the sign-in page</a> &nbsp;·&nbsp; <a href="index.html" style="color:var(--dim)">Back to the website</a></p>
   </div>
 </div>
 
@@ -199,8 +195,15 @@ input:focus{border-color:var(--gold)}
 
 <script>
 const API_BASE=localStorage.getItem('kaunta_base')||'https://kaunta-api.kaunta-api.workers.dev';
-const tokKey='kaunta_owner_token';
+const tokKey='kaunta_token';
+// Older builds kept a separate session for this page. Fold it into the one shared key.
+if(!localStorage.getItem(tokKey)){
+  const legacy=localStorage.getItem('kaunta_owner_token');
+  if(legacy){ localStorage.setItem(tokKey,legacy); localStorage.removeItem('kaunta_owner_token'); }
+}
 let TOKEN=localStorage.getItem(tokKey)||'';
+const SIGNIN='kaunta.html?next=owner.html';
+const toSignIn=()=>location.replace(SIGNIN);
 let SUB=null, PROFILE=null;
 const DAY=86400000;
 const kes=n=>'KES '+(Math.round(n)||0).toLocaleString('en-KE');
@@ -238,22 +241,8 @@ const api=async(path,body)=>{
 
 function fmtDate(ms){ if(!ms) return '—'; return new Date(ms).toLocaleDateString('en-KE',{day:'numeric',month:'short',year:'numeric'}); }
 
-async function doLogin(){
-  const err=document.getElementById('lgErr'); err.style.display='none';
-  const r=await api('/api/login',{email:document.getElementById('lgEmail').value.trim(),password:document.getElementById('lgPass').value});
-  if(!r.ok){ err.textContent=r.data.error||'Login failed'; err.style.display='block'; return; }
-  TOKEN=r.data.token; localStorage.setItem(tokKey,TOKEN); PROFILE=r.data.user;
-  bootDash();
-}
 function logout(){
-  api('/api/logout','').then(()=>{ localStorage.removeItem(tokKey); location.reload(); });
-}
-function flipEye(btn, inputId){
-  const i=document.getElementById(inputId); if(!i) return;
-  const show=i.type==='password';
-  i.type=show?'text':'password';
-  btn.textContent=show?'Hide':'Show';
-  btn.classList.toggle('on',show);
+  api('/api/logout','').then(()=>{ localStorage.removeItem(tokKey); localStorage.removeItem('kaunta_seq'); localStorage.removeItem('kaunta_sub'); location.replace('kaunta.html'); });
 }
 
 const subLabel=s=>{
@@ -266,19 +255,25 @@ const subLabel=s=>{
 };
 
 async function bootDash(){
-  const err=document.getElementById('lgErr');
   const me=await api('/api/me','');
-  if(!me.ok){ if(err){ err.textContent=me.data.error||'Session expired'; err.style.display='block'; } document.getElementById('gate').classList.remove('hidden'); return; }
+  if(!me.ok){
+    if(me.data.error==='net'){ gateNote('Cannot reach the server. Check your connection and <a href="owner.html" style="color:var(--gold)">try again</a>.'); return; }
+    TOKEN=''; localStorage.removeItem(tokKey); toSignIn(); return;
+  }
   PROFILE=me.data.user;
-  if(PROFILE.role!=='owner'){ alert('This dashboard is for bar owners. Bartenders use the Kaunta app on the counter phone.'); logout(); return; }
+  if(PROFILE.role!=='owner'){ toSignIn(); return; }
   document.getElementById('barName').textContent=me.data.bar.name;
   document.getElementById('gate').classList.add('hidden');
   document.getElementById('main').classList.remove('hidden');
-  document.getElementById('apiNote').textContent='Server: '+API_BASE;
   loadSummary();
   setInterval(loadSummary,15000);
   window.addEventListener('online',()=>loadSummary());
   loadAnnounce();
+}
+function gateNote(html){
+  const el=document.getElementById('gateNote'); if(!el) return;
+  el.innerHTML=html;
+  document.getElementById('gate').classList.remove('hidden');
 }
 function nowPill(){
   const el=document.getElementById('netPill');
@@ -308,7 +303,7 @@ async function loadSummary(){
   const from=new Date(); from.setHours(0,0,0,0);
   const tz=-from.getTimezoneOffset();
   const r=await api('/api/summary?from='+from.getTime()+'&until='+Date.now()+'&tz='+tz,'');
-  if(!r.ok){ if(r.data.error==='Not logged in'){ location.reload(); } return; }
+  if(!r.ok){ if(r.data.error==='Not logged in'||r.data.error==='Session expired — log in again'){ toSignIn(); } return; }
   const d=r.data;
   SUB=d.subscription;
   if(d.bar&&d.bar.join_code){
@@ -562,8 +557,7 @@ window.addEventListener('beforeunload',()=>{});
 
 (function boot(){
   nowPill();
-  loadAnnounce();
-  if(TOKEN){ bootDash(); } else { document.getElementById('gate').classList.remove('hidden'); document.getElementById('apiNote').textContent='Server: '+API_BASE; }
+  if(TOKEN){ bootDash(); } else { toSignIn(); }
 })();
 </script>
 </body>

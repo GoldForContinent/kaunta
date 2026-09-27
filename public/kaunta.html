@@ -383,6 +383,8 @@ nav{
 .ov-card .lbl{margin-top:12px}
 .ov-card .divider{display:flex;align-items:center;gap:8px;margin:16px 0;color:var(--dim);font-size:10.5px;letter-spacing:1px;text-transform:uppercase}
 .ov-card .divider::before,.ov-card .divider::after{content:'';flex:1;height:1px;background:var(--line)}
+.ov-card .backaway{display:block;text-align:center;margin-top:16px;font-size:11.5px;color:var(--dim);text-decoration:none;font-weight:700}
+.ov-card .backaway:hover{color:var(--gold)}
 .pill2{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.4px;border:1px solid var(--line2);background:rgba(255,255,255,.03);color:var(--dim)}
 .pill2 b{color:var(--paper)}
 .pill2.warn{color:var(--ember);border-color:rgba(255,92,56,.35);background:rgba(255,92,56,.08)}
@@ -432,6 +434,7 @@ nav{
   <div class="ov-card">
     <h2>Kaunta</h2>
     <p class="sub">The bar ledger that never sleeps.<br>30-day free trial · then KES 500 / month.</p>
+    <div class="ctlbl" style="margin-bottom:8px">Are you signing in as a bartender or as the owner?</div>
     <div class="seg" style="margin-bottom:14px" id="gatePath">
       <div class="chip sel" data-p="staff">I work at a bar</div>
       <div class="chip" data-p="owner">I own the bar</div>
@@ -454,10 +457,11 @@ nav{
       <button class="btn primary" style="margin-top:2px" onclick="doLogin()">Log in</button>
       <div class="err" id="lgErr"></div>
       <p class="mini" style="text-align:center"><a onclick="staffShowJoin()" style="color:var(--gold);cursor:pointer" class="staffOnly">← Use the join code instead</a></p>
-      <p class="mini" style="text-align:center"><span id="ownerHint" class="hidden"><b style="color:var(--gold)">Owner?</b> Your dashboard is at <a href="owner.html" style="color:var(--gold)">owner.html</a> →</span> Forgot your password? A Kaunta systems admin can reset it from the admin console.</p>
+      <p class="mini" style="text-align:center">Forgot your password? A Kaunta systems admin can reset it from the admin console.</p>
       <div class="divider">or</div>
       <button class="btn ghost" id="showSignup">Create a bar account</button>
     </div>
+    <a class="backaway" href="index.html">&larr; Back to the website</a>
   </div>
 </div>
 
@@ -887,8 +891,7 @@ function initGate(){
     const staff=c.dataset.p==='staff';
     document.getElementById('gateTip').innerHTML = staff
       ? '<b>Bartender?</b> Tap the join code below — ask your owner for the 6-digit code. Your sales are kept under your name.'
-      : '<b>Owner?</b> Create your bar account below, then share the 6-digit <b>join code</b> (Settings → Join code) with your bartenders. Your dashboard is at <b>owner.html</b>.';
-    document.getElementById('ownerHint').classList.toggle('hidden', staff);
+      : '<b>Owner?</b> Log in with the one account you use everywhere — the counter app on this phone and the owner dashboard share the same sign-in. Share the 6-digit <b>join code</b> (Settings → Join code) with your bartenders.';
     document.querySelectorAll('.staffOnly').forEach(x=>x.style.display=staff?'':'none');
     setGatePanel(staff);
     const codeWrap=document.getElementById('suCodeWrap');
@@ -957,6 +960,14 @@ async function doSignup(){
   toast('Account created — logging you in');
   await doLogin();
 }
+const NEXT=new URLSearchParams(location.search).get('next');
+function goNext(){
+  if(NEXT!=='owner.html') return;
+  if(!PROFILE) return;                       // session expired — the gate stays up, we decide after sign-in
+  if(PROFILE.role==='owner'){ location.replace('owner.html'); return; }
+  history.replaceState(null,'','kaunta.html');
+  toast('The owner dashboard is for bar owners — this is the counter app');
+}
 async function afterAuth(reconnect){
   if(!window._nwWired){ window._nwWired=true; autoReconnect(); }
   updateNw();
@@ -991,6 +1002,7 @@ async function afterAuth(reconnect){
     if((s.changes||[]).length<500) break;
   }
   renderDash(); tickSub();
+  goNext();
 }
 async function migrateToCloud(){
   const ops=[];
@@ -1728,6 +1740,7 @@ function openSettings(){
     <div class="subrow"><span>Email</span><b id="accEmail">${PROFILE?PROFILE.email:'—'}</b></div>
     <div class="subrow"><span>Join code</span><b id="accCode">${window._barJoin||'—'}</b></div>
     <div class="subrow"><span>Role</span><b>${PROFILE?PROFILE.role:'—'}</b></div>
+    ${PROFILE&&PROFILE.role==='owner'?'<a class="btn ghost" href="owner.html" style="margin-top:8px;display:block;text-align:center;text-decoration:none">Open the owner dashboard</a>':''}
     <button class="btn ghost" onclick="logout()" style="margin-top:8px;color:var(--ember)">Log out of this phone</button>
     <div class="ctlbl" style="margin-top:8px">Change password</div>
     <div class="ovset">
@@ -1773,6 +1786,7 @@ async function logout(){
   localStorage.removeItem(K_TOKEN); localStorage.removeItem(K_SEQ); localStorage.removeItem(K_SUB);
   TOKEN=''; SUB=null; lastSeq=0; PROFILE=null;
   document.getElementById('lgEmail').value='';
+  history.replaceState(null,'','kaunta.html');
   show('gate');
 }
 function saveBar(){
