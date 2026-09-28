@@ -1,4 +1,4 @@
-const CACHE = 'kaunta-v3';
+const CACHE = 'kaunta-v4';
 const ASSETS = [
   './index.html',
   './kaunta.html',
