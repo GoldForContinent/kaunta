@@ -148,6 +148,45 @@ footer a{color:var(--gold);text-decoration:none}
 </head>
 <body>
 
+<!-- in-app back/refresh: installed PWA windows have no browser toolbar -->
+<style>
+#nxt{position:fixed;top:0;left:0;right:0;z-index:1000;display:flex;align-items:center;gap:8px;height:46px;padding:0 10px 0 14px;background:rgba(11,13,10,.84);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom:1px solid var(--line);-webkit-user-select:none;user-select:none}
+#nxt.hidden{display:none}
+#nxt button{width:34px;height:34px;flex:none;border-radius:10px;border:1px solid var(--line2);background:rgba(255,255,255,.04);color:var(--paper);cursor:pointer;display:grid;place-items:center;font-size:16px;line-height:1;padding:0}
+#nxt button:hover{background:rgba(233,185,92,.14);color:var(--gold)}
+#nxt .nt{flex:1;min-width:0;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.nxt{padding-top:46px}
+body.nxt .overlay{padding-top:76px}
+@media (max-width:760px){body.nxt{padding-top:0}#nxt{display:none}}
+</style>
+<div id="nxt" class="hidden">
+  <button id="nxtBack" title="Back" aria-label="Go back">&#8592;</button>
+  <span class="nt" id="nxtTitle"></span>
+  <button id="nxtReload" title="Refresh" aria-label="Refresh this page">&#8635;</button>
+</div>
+<script>
+(function(){
+  var m1=window.matchMedia('(display-mode: standalone)'), m2=window.matchMedia('(display-mode: minimal-ui)');
+  function on(){ try{ return m1.matches||m2.matches||!!window.navigator.standalone; }catch(e){ return false; } }
+  function sync(){ try{ document.getElementById('nxt').classList.toggle('hidden',!on()); document.body.classList.toggle('nxt',on()); }catch(e){} }
+  var t=document.getElementById('nxtTitle'); if(t){ t.textContent=(document.title||'Kaunta').split(/\s*[–—-]\s*/)[0].trim(); }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',sync); } else { sync(); }
+  try{ m1.addEventListener('change',sync); m2.addEventListener('change',sync); }catch(e){}
+  window.addEventListener('pageshow',sync);
+  document.getElementById('nxtBack').addEventListener('click',function(){
+    var p=(location.pathname.split('/').pop()||''), base=p.replace(/\.html$/,'');
+    var ref=document.referrer||'';
+    var fromApp=ref.indexOf(location.origin)===0 && !(ref.endsWith('/'+p)||ref.endsWith('/'+base)||ref.endsWith(p)||ref.endsWith(base));
+    if(fromApp){ history.back(); }
+    else if(base==='kaunta'){ location.href='index.html'; }
+    else if(base==='owner'){ location.href='kaunta.html'; }
+    else if(base==='admin'){ location.href='index.html'; }
+    else { history.back(); }
+  });
+  document.getElementById('nxtReload').addEventListener('click',function(){ location.reload(); });
+})();
+</script>
+
 <header>
   <div class="wrap nav">
     <div class="brand"><div class="mark"><svg viewBox="0 0 24 24"><path d="M6 3v18M9.5 3v18M13 3v18M16.5 3v14"/><path d="m16.5 3-10.5 18"/></svg></div>Kaunta</div>
