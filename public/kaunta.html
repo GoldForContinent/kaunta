@@ -595,7 +595,7 @@ nav{
     <!-- SELL -->
     <section id="view-sell" class="view hidden">
       <h2>Record Sale</h2>
-      <p class="sub">Pick a drink, split it, tap the counter. Zero excuses.</p>
+      <p class="sub">Pick a drink, split it, tap add — load as many different drinks as the table wants, then charge the whole round once.</p>
 
       <div class="drinks" id="drinkList"></div>
 
@@ -626,7 +626,18 @@ nav{
         <input id="debtName" placeholder="Write the customer's name…">
       </div>
 
-      <button class="btn primary" id="sellBtn" style="margin-top:8px">TAP THE COUNTER</button>
+      <button class="btn primary" id="sellBtn" style="margin-top:8px">＋ ADD TO ROUND</button>
+
+      <div class="card" id="roundBox" style="display:none;margin-top:12px">
+        <div class="cardhead"><svg class="ic ic-s"><use href="#i-trend"/></svg>Round — the table's order <span id="roundCount" style="margin-left:auto"></span></div>
+        <div id="roundItems"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 4px">
+          <span style="font-size:11px;color:var(--dim);font-weight:700;letter-spacing:1.5px;text-transform:uppercase">Total</span>
+          <b class="money" style="font-size:24px" id="roundTotal">KES 0</b>
+        </div>
+        <button class="btn primary" id="chargeBtn" style="margin-top:6px">CHARGE ROUND · KES 0</button>
+        <button class="btn ghost" onclick="clearRound()" style="margin-top:8px">Clear round</button>
+      </div>
     </section>
 
     <!-- DENI -->
@@ -666,7 +677,8 @@ nav{
       <div id="shiftCard"></div>
       <div id="stockList"></div>
       <button class="btn ghost" onclick="openAddDrink()" style="margin-top:6px">+ Add drink</button>
-      <button class="btn primary" onclick="newDay()" style="margin-top:10px">Start New Day · reset shift</button>
+      <button class="btn primary" onclick="openTake()" style="margin-top:10px">🧮 Count shelf & value stock-take</button>
+      <button class="btn ghost" onclick="newDay()" style="margin-top:10px">Start New Day · reset shift</button>
     </section>
   </main>
 
@@ -691,11 +703,11 @@ const FRACT = {full:1, half:0.5, quarter:0.25};
 const FR_LBL = {full:'Full', half:'Half', quarter:'Quarter', shot:'Shot'};
 const PL = {cash:'Cash', mpesa:'M-Pesa', deni:'Debt'};
 const DEF_DRINKS = [
-  {id:'kc', name:'Kenya Cane', size:250, full:350, half:175, quarter:90, open:10, soldMl:0, divisible:1, shot_ml:0, shot_price:0},
-  {id:'kg', name:'Kibao Gin', size:250, full:250, half:130, quarter:70, open:8, soldMl:0, divisible:1, shot_ml:0, shot_price:0},
-  {id:'sm', name:'Senator Keg', size:500, full:180, half:95, quarter:50, open:20, soldMl:0, divisible:1, shot_ml:0, shot_price:0},
-  {id:'tb', name:'Tusker Lager', size:500, full:250, half:0, quarter:0, open:15, soldMl:0, divisible:0, shot_ml:0, shot_price:0},
-  {id:'gt', name:'Gilbeys', size:750, full:950, half:500, quarter:260, open:4, soldMl:0, divisible:1, shot_ml:0, shot_price:0},
+  {id:'kc', name:'Kenya Cane', size:250, full:350, half:175, quarter:90, open:10, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:2500},
+  {id:'kg', name:'Kibao Gin', size:250, full:250, half:130, quarter:70, open:8, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:2000},
+  {id:'sm', name:'Senator Keg', size:500, full:180, half:95, quarter:50, open:20, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:10000},
+  {id:'tb', name:'Tusker Lager', size:500, full:250, half:0, quarter:0, open:15, soldMl:0, divisible:0, shot_ml:0, shot_price:0, stockMl:7500},
+  {id:'gt', name:'Gilbeys', size:750, full:950, half:500, quarter:260, open:4, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:3000},
 ];
 const KEY='kaunta2', OLD_KEY='kengele2';
 let DB = {};
@@ -710,15 +722,17 @@ const save = ()=>localStorage.setItem(KEY, JSON.stringify(DB));
 function normDB(){
   DB.restocks = DB.restocks||[];
   DB.shifts  = DB.shifts||[];
+  DB.stocktakes = DB.stocktakes||[];
   (DB.drinks||[]).forEach(d=>{
     if(d.divisible===undefined) d.divisible=(d.quarter>0||d.half>0)?1:0;
     if(d.shot_ml===undefined) d.shot_ml=0;
     if(d.shot_price===undefined) d.shot_price=0;
+    if(d.stockMl===undefined) d.stockMl=(d.open||0)*Ml(d);
   });
-  (DB.sales||[]).forEach(s=>{ if(!s.uid) s.uid=''; if(!s.staff) s.staff=''; });
+  (DB.sales||[]).forEach(s=>{ if(!s.uid) s.uid=''; if(!s.staff) s.staff=''; if(!s.round) s.round=''; });
 }
 if(!DB){
-  DB = {bar:'Mama Pima Gardens', drinks:DEF_DRINKS, sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false, restocks:[], shifts:[]};
+  DB = {bar:'Mama Pima Gardens', drinks:DEF_DRINKS, sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false, restocks:[], shifts:[], stocktakes:[]};
   seed();
 }
 normDB();
@@ -770,10 +784,13 @@ function enqueue(type,payload){
 function applyRemote(type,p){
   switch(type){
     case 'sale': {
-      DB.sales.push({t:p.t,drink:p.drink,size:p.size,qty:p.qty,price:p.price,pay:p.pay,who:p.who||'',uid:p.uid||'',staff:p.staff||''});
+      DB.sales.push({t:p.t,drink:p.drink,size:p.size,qty:p.qty,price:p.price,pay:p.pay,who:p.who||'',uid:p.uid||'',staff:p.staff||'',round:p.round||''});
       if(p.pay==='deni'&&p.who){ DB.debts[p.who]=(DB.debts[p.who]||0)+p.price; addReg(p.who); }
       const d=DB.drinks.find(x=>x.id===p.drink);
-      if(d&&pourMl(d,p.size,p.qty)) d.soldMl+=pourMl(d,p.size,p.qty);
+      if(d){
+        const pm=pourMl(d,p.size,p.qty);
+        if(pm){ d.soldMl+=pm; d.stockMl=Math.max(0,(d.stockMl===undefined?d.open*Ml(d):d.stockMl)-pm); }
+      }
       break;
     }
     case 'add_debt': {
@@ -786,15 +803,15 @@ function applyRemote(type,p){
       DB.sales.push({t:p.t||Date.now(),drink:'_pay',size:'',qty:1,price:p.amount,pay:'cash',who:p.who,uid:p.uid||'',staff:p.staff||''});
       break;
     }
-    case 'set_open': { const d=DB.drinks.find(x=>x.id===p.drink); if(d) d.open=p.open; break; }
+    case 'set_open': { const d=DB.drinks.find(x=>x.id===p.drink); if(d){ d.open=p.open; d.stockMl=p.open*Ml(d); } break; }
     case 'set_price': { const d=DB.drinks.find(x=>x.id===p.drink); if(d&&['full','half','quarter','shot_price'].indexOf(p.k)>-1) d[p.k]=p.v; break; }
     case 'add_drink': {
-      if(!DB.drinks.find(x=>x.id===p.id)) DB.drinks.push({id:p.id,name:p.name,size:p.size,full:p.full,half:p.half,quarter:p.quarter,open:0,soldMl:0,divisible:1,shot_ml:0,shot_price:0});
+      if(!DB.drinks.find(x=>x.id===p.id)) DB.drinks.push({id:p.id,name:p.name,size:p.size,full:p.full,half:p.half,quarter:p.quarter,open:0,soldMl:0,divisible:1,shot_ml:0,shot_price:0,stockMl:0});
       break;
     }
     case 'restock': {
       const d=DB.drinks.find(x=>x.id===p.drink);
-      if(d){ d.open+=Math.max(1,Math.round(p.qty||1)); DB.restocks.push({drink:p.drink,qty:p.qty,t:p.t||Date.now()}); }
+      if(d){ const q=Math.max(1,Math.round(p.qty||1)); d.open+=q; d.stockMl=(d.stockMl===undefined?d.open*Ml(d):d.stockMl)+q*Ml(d); DB.restocks.push({drink:p.drink,qty:q,t:p.t||Date.now()}); }
       break;
     }
     case 'set_drink_split': {
@@ -809,6 +826,14 @@ function applyRemote(type,p){
         const sh=DB.shifts.find(x=>x.id===p.id);
         if(sh){ sh.close_at=p.t; sh.close_counts=p.counts||{}; sh.close_total=p.close_total||0; sh.close_cash=p.close_cash||0; sh.close_mpesa=p.close_mpesa||0; sh.close_deni=p.close_deni||0; }
       }
+      break;
+    }
+    case 'stocktake': {
+      const counts=p.counts||{};
+      DB.drinks.forEach(d=>{
+        if(counts[d.id]!=null){ d.open=Math.max(0,Math.round(counts[d.id])); d.stockMl=d.open*Ml(d); }
+      });
+      if(p.id) DB.stocktakes.unshift({id:p.id,t:p.t||Date.now(),note:p.note||'',counts:p.counts||{},totals:p.totals||{}});
       break;
     }
     case 'new_day': DB.drinks.forEach(x=>x.soldMl=0); DB.open=p.t||Date.now(); break;
@@ -1139,7 +1164,9 @@ function seed(){
   const mk=(dId,size,pay,who,ago,qty=1,dofs=0)=>{
     const d=DB.drinks.find(x=>x.id===dId); if(!d) return;
     const price=(size==='full'?d.full: size==='half'?d.half: size==='shot'?d.shot_price: d.quarter)*qty;
-    d.soldMl += pourMl(d,size,qty);
+    const pm=pourMl(d,size,qty);
+    d.soldMl += pm;
+    d.stockMl=Math.max(0,(d.stockMl===undefined?d.open*Ml(d):d.stockMl)-pm);
     const t = new Date(now-ago*60000); t.setDate(t.getDate()+dofs);
     DB.sales.push({t:+t, drink:dId, size, qty, price, pay, who:who||'', uid:'', staff:''});
     if(pay==='deni' && who){ DB.debts[who]=(DB.debts[who]||0)+price; addReg(who); }
@@ -1174,8 +1201,9 @@ const S = {drink:'kc', size:'full', qty:1, pay:'cash', who:''};
 function renderSell(){
   const el=document.getElementById('drinkList'); el.innerHTML='';
   DB.drinks.forEach(d=>{
-    const total=Ml(d)*d.open, left=Math.max(0,total-d.soldMl), pct=Math.max(8,Math.min(100,left/total*100));
-    const cls = left<=0?'warn':(left/total<0.25?'full':'');
+    const total=(roundLeft(d)||0)+d.soldMl, left=Math.max(0,Math.round(roundLeft(d))||0);
+    const pct=Math.max(8,Math.min(100, total>0?left/total*100:0));
+    const cls = left<=0?'warn':(total>0&&left/total<0.25?'full':'');
     const div=document.createElement('div');
     div.className='drink'+(S.drink===d.id?' sel':'');
     div.innerHTML=`
@@ -1215,7 +1243,7 @@ function updChips(){
   w.classList.toggle('hidden', S.pay!=='deni');
   if(S.pay==='deni') renderRegs();
   const amt=drinkPrice(d,S.size)*S.qty;
-  document.getElementById('sellBtn').textContent = S.pay==='deni' ? `DEBT · ${kes(amt)}` : (S.pay==='mpesa'? 'M-PESA · ': 'CASH · ') + kes(amt);
+  document.getElementById('sellBtn').textContent = `＋ ADD TO ROUND · ${kes(amt)}`;
 }
 document.querySelectorAll('#sizeChips .chip').forEach(c=>c.onclick=()=>{S.size=c.dataset.size;updChips();});
 document.querySelectorAll('#payRow .chip').forEach(c=>c.onclick=()=>{S.pay=c.dataset.pay;updChips();});
@@ -1241,26 +1269,88 @@ const curStaff=()=>{
   return PROFILE?{id:PROFILE.id,name:PROFILE.name}:{id:'',name:''};
 };
 
-document.getElementById('sellBtn').onclick=()=>{
+/* ---- round / multi-item sale (several liquors in one sitting) ---- */
+const ROUND=[];  // {key, drink, size, qty, price, pay, who}
+const roundLeft=d=> (d.stockMl===undefined ? d.open*Ml(d) : d.stockMl);
+const roundAmt=l=> l.price*l.qty;
+function renderRound(){
+  const box=document.getElementById('roundBox');
+  const wrap=document.getElementById('roundItems');
+  if(!box||!wrap) return;
+  box.style.display = ROUND.length? '':'none';
+  document.getElementById('roundCount').textContent = ROUND.length? ROUND.length+' item'+(ROUND.length>1?'s':''):'';
+  const total=ROUND.reduce((a,l)=>a+roundAmt(l),0);
+  document.getElementById('roundTotal').textContent=kes(total);
+  const charge=document.getElementById('chargeBtn');
+  if(charge) charge.textContent='CHARGE ROUND · '+kes(total);
+  if(!ROUND.length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = ROUND.map((l,i)=>{
+    const d=DB.drinks.find(x=>x.id===l.drink);
+    const nm=d?d.name:(l.drink||'?');
+    const deni = l.pay==='deni';
+    return `<div style="padding:9px 0;border-bottom:1px solid var(--line)">
+      <div class="row" style="border:none;padding:2px 0">
+        <div class="l"><b style="font-size:13.5px">${nm}</b><span>${FR_LBL[l.size]||l.size} × ${l.qty}${l.who?' · '+esc(l.who):''}</span></div>
+        <div class="r"><b class="money" style="font-size:15px">${kes(roundAmt(l))}</b></div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+        ${['cash','mpesa','deni'].map(p=>`<button class="btn small" style="flex:1;padding:7px 6px;font-size:10.5px;${l.pay===p?'background:var(--paper);color:#171307;border-color:transparent':'background:rgba(255,255,255,.04);color:var(--dim);border:1px solid var(--line2)'}" onclick="setRoundPay(${i},'${p}')">${PL[p]}</button>`).join('')}
+        ${deni?'<input id="rw-'+l.key+'" value="'+esc(l.who||'')+'" placeholder="Customer name" oninput="setRoundWho(\''+l.key+'\',this.value)" style="flex:2;margin:0;padding:8px 10px;font-size:11.5px">':''}
+        <button class="btn small" style="padding:7px 10px;background:rgba(255,92,56,.12);color:var(--ember);border:1px solid rgba(255,92,56,.3)" onclick="removeRound(${i})">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function setRoundPay(i,p){ ROUND[i].pay=p; if(p!=='deni') ROUND[i].who=''; renderRound(); }
+function setRoundWho(key,v){ const l=ROUND.find(x=>x.key===key); if(l) l.who=v.trim(); }
+function removeRound(i){ ROUND.splice(i,1); renderRound(); }
+function clearRound(){ ROUND.length=0; renderRound(); }
+function addToRound(){
   const d=DB.drinks.find(x=>x.id===S.drink);
   const price=drinkPrice(d,S.size);
   if(!price) return toast('No '+FR_LBL[S.size]+' price set for this one');
-  if((Ml(d)*d.open - d.soldMl) < pourMl(d,S.size,S.qty) - 0.5)
-    return toast(d.name+' — not enough stock');
   let who=S.who.trim();
   if(S.pay==='deni' && !who) return toast('Write the customer name');
-  const amt=price*S.qty;
-  if(S.pay==='deni'){ DB.debts[who]=(DB.debts[who]||0)+amt; addReg(who); }
-  d.soldMl += pourMl(d,S.size,S.qty);
-  const st=curStaff();
-  DB.sales.push({t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:'', uid:st.id, staff:st.name});
+  ROUND.push({key:oid(), drink:d.id, size:S.size, qty:S.qty, price, pay:S.pay, who:S.pay==='deni'?who:''});
+  S.qty=1; document.getElementById('qtyVal').textContent='1';
+  renderRound(); renderSell(); updChips();
+  toast(nmShort(d.name)+' added — keep loading the round');
+}
+function nmShort(n){ return n.length>16? n.slice(0,15)+'…':n; }
+function chargeRound(){
+  if(!ROUND.length) return toast('Add at least one drink to the round');
+  const st=curStaff(); const rid=oid(); const t=Date.now();
+  const pourBy={};
+  const bad=[];
+  ROUND.forEach(l=>{
+    const d=DB.drinks.find(x=>x.id===l.drink);
+    if(!d) return bad.push('Unknown drink in the round');
+    pourBy[l.drink]=(pourBy[l.drink]||0)+pourMl(d,l.size,l.qty);
+    if(l.pay==='deni'&&!l.who) bad.push('Write the '+d.name+' customer name');
+  });
+  if(bad.length) return toast(bad[0]);
+  for(const id of Object.keys(pourBy)){
+    const d=DB.drinks.find(x=>x.id===id);
+    if(d && roundLeft(d) < pourBy[id] - 0.5) return toast(d.name+' — not enough stock');
+  }
+  let total=0;
+  ROUND.forEach(l=>{
+    const d=DB.drinks.find(x=>x.id===l.drink);
+    const amt=l.price*l.qty; total+=amt;
+    const pm=pourMl(d,l.size,l.qty);
+    d.soldMl+=pm; d.stockMl=Math.max(0,roundLeft(d)-pm);
+    if(l.pay==='deni'){ DB.debts[l.who]=(DB.debts[l.who]||0)+amt; addReg(l.who); }
+    DB.sales.push({t, drink:l.drink, size:l.size, qty:l.qty, price:amt, pay:l.pay, who:l.pay==='deni'?l.who:'', uid:st.id, staff:st.name, round:rid});
+    enqueue('sale',{t, drink:l.drink, size:l.size, qty:l.qty, price:amt, pay:l.pay, who:l.pay==='deni'?l.who:'', uid:st.id, staff:st.name, round:rid});
+  });
   save();
-  enqueue('sale',{t:Date.now(), drink:d.id, size:S.size, qty:S.qty, price:amt, pay:S.pay, who:S.pay==='deni'?who:'', uid:st.id, staff:st.name});
-  flash(amt, d.name+' · '+FR_LBL[S.size]+' · '+S.qty+' × '+(S.pay==='deni'?who:S.pay));
+  clearRound();
+  flash(total, 'Round · '+(Object.keys(pourBy).length||0)+' drink'+(Object.keys(pourBy).length===1?'':'s')+' charged');
   chime();
-  updChips(); renderSell(); renderDash();
-  if(S.pay==='deni'){ S.qty=1; document.getElementById('qtyVal').textContent='1'; }
-};
+  renderSell(); updChips(); renderDash();
+}
+document.getElementById('sellBtn').onclick=addToRound;
+document.getElementById('chargeBtn').onclick=chargeRound;
 
 /* =============== DASH ============ */
 function todaySales(){ return DB.sales.filter(s=>todayStr(new Date(s.t))===todayStr()); }
@@ -1302,7 +1392,7 @@ function renderDash(){
   let alarms=0;
   const debtOut=Object.values(DB.debts).reduce((a,b)=>a+b,0);
   DB.drinks.forEach(d=>{
-    const left=Ml(d)*d.open-d.soldMl;
+    const left=roundLeft(d);
     if(left<-1){
       alarms++;
       al.innerHTML+=`<div class="alert alarm"><div class="sig">${IC('alert')}</div><div><h4>⚠ ${d.name} oversold by ${Math.abs(left/Ml(d)).toFixed(1)} bottles</h4><p>Expected stock doesn't match the sales logged. Spot-count now.</p></div></div>`;
@@ -1327,11 +1417,11 @@ function renderDash(){
     const soldB=d.soldMl/Ml(d), band=drinkBand(d,soldB);
     const book=t2.filter(s=>s.drink===d.id).reduce((a,s)=>a+s.price,0);
     exp.min+=band.min; exp.max+=band.max; exp.book+=book;
-    const total=Ml(d)*d.open, left=Math.max(0,total-d.soldMl), pct=Math.max(0,left/total*100);
+    const total=(roundLeft(d)||0)+d.soldMl, left=Math.max(0,(Math.round(roundLeft(d)))||0), pct=total>0?Math.max(0,left/total*100):0;
     const cls=left<=0?'red':(pct<25?'grn':'');
     const out=(book<band.min-1)||(book>band.max+1);
     return `<div style="margin-bottom:12px"><div class="row" style="border:none;padding:3px 0">
-      <div class="l"><b style="font-size:13.5px">${d.name}</b><span>${left.toFixed(0)} / ${total} ml left</span></div>
+      <div class="l"><b style="font-size:13.5px">${d.name}</b><span>${left.toFixed(0)} / ${total.toFixed(0)} ml left</span></div>
       <div class="r" style="text-align:right"><div style="font-family:var(--serif);font-weight:800;font-size:12.5px;color:var(--gold)">KES ${band.min} – ${band.max}</div>
       <div class="mini" style="margin:0;line-height:1.3">ledger ${kes(book)}${out?' <span style="color:var(--ember)">· OFF!</span>':''}</div></div></div>
       <div class="gauge"><i class="${cls}" style="width:${pct}%"></i></div></div>`;
@@ -1359,7 +1449,7 @@ function renderDash(){
     const isT=todayStr(new Date(s.t))===todayStr();
     const tm=new Date(s.t);
     const lbl=isT? (tm.getHours().toString().padStart(2,'0'))+':'+(tm.getMinutes().toString().padStart(2,'0')) : 'yesterday';
-    return `<div class="row"><div class="l"><b>${d.name} <span class="tag ${s.size}">${FR_LBL[s.size]}</span></b>
+    return `<div class="row"><div class="l"><b>${d.name} <span class="tag ${s.size}">${FR_LBL[s.size]}</span>${s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':''}</b>
       <span>${lbl} · ${s.staff||s.who||'over counter'}</span></div>
       <div class="r"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
       <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span></div></div>`;
@@ -1473,7 +1563,7 @@ function renderHist(){
       const d=DB.drinks.find(x=>x.id===s.drink);
       const tm=new Date(s.t);
       const tmm=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0');
-      return `<div class="row"><div class="l"><b>${d?d.name:'Loading…'} ${s.size?'<span class="tag '+s.size+'">'+FR_LBL[s.size]+'</span>':''}${s.qty>1?'  <span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">×'+s.qty+'</span>':''}</b>
+      return `<div class="row"><div class="l"><b>${d?d.name:'Loading…'} ${s.size?'<span class="tag '+s.size+'">'+FR_LBL[s.size]+'</span>':''}${s.qty>1?'  <span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">×'+s.qty+'</span>':''}${s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':''}</b>
         <span>${tmm} · ${s.staff||s.who||'over counter'}</span></div>
         <div class="r"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
         <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span></div></div>`;
@@ -1503,7 +1593,8 @@ function drinkBand(d, bottles){
 function renderStock(){
   const todayRest=d=>DB.restocks.filter(r=>r.drink===d.id && todayStr(new Date(r.t))===todayStr()).reduce((a,r)=>a+r.qty,0);
   document.getElementById('stockList').innerHTML = DB.drinks.map(d=>{
-    const total=Ml(d)*d.open, left=Math.max(0,total-d.soldMl);
+    const total=roundLeft(d)+d.soldMl, left=Math.max(0,(Math.round(roundLeft(d)))||0);
+    const soldB=d.soldMl/Ml(d), band=drinkBand(d,soldB);
     const splitTag = !d.divisible ? '<span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">whole only</span>'
       : d.shot_ml>0? `<span class="tag quarter">${d.shot_ml}ml shots</span>` : '<span class="tag half">divisible</span>';
     return `<div class="card">
@@ -1522,14 +1613,116 @@ function renderStock(){
           </div>
         </div>
       </div>
-      <div class="mini">Expected left: <b>${(left/Ml(d)).toFixed(1)} bottles</b> · sold <b>${(d.soldMl/Ml(d)).toFixed(1)}</b>${todayRest(d)?' · restocked <b>+'+todayRest(d)+'</b>':''} ${d.soldMl>total?'<span style="color:var(--ember)">· OVER!</span>':''}</div>
+      <div class="mini">On the shelf: <b>${(left/Ml(d)).toFixed(1)} bottles</b> · sold today <b>${(soldB).toFixed(1)}</b>${todayRest(d)?' · restocked <b>+'+todayRest(d)+'</b>':''} ${d.soldMl>total?'<span style="color:var(--ember)">· OVER!</span>':''}</div>
+      <div class="mini" style="margin-top:6px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px">Expected from sold stock: <b class="money" style="font-style:normal;font-size:12px">KES ${band.min} – ${band.max}</b><span style="color:var(--dim)"> · divisions & shots included</span></div>
       <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn small ghost" style="flex:1" onclick="addToTake('${d.id}')">+ Count shelf</button>
         <button class="btn small ghost" style="flex:1" onclick="openRestock('${d.id}')">+ Received stock</button>
         <button class="btn small ghost" style="flex:1" onclick="openSplit('${d.id}')">Split / shots</button>
       </div>
     </div>`;
   }).join('');
 }
+/* ---- stock-take: count the shelf, value the consumed stock, keep a record ---- */
+let TAKE={};
+// Consumption window: since the previous take, or since the start of today (first take).
+const takeSince=()=>{ const l=DB.stocktakes[0]; if(l) return l.t; const x=new Date(); x.setHours(0,0,0,0); return x.getTime(); };
+function takeBase(id){
+  const since=takeSince();
+  let base=0;
+  const lastTake=DB.stocktakes[0]||null;
+  if(lastTake){ try{ base=Number((lastTake.counts||{})[id])||0; }catch(e){ base=0; } }
+  else { const d=DB.drinks.find(x=>x.id===id); base=Math.max(0,Math.round(d?d.open:0)); }
+  const restC=DB.restocks.filter(r=>r.drink===id && r.t>since).reduce((a,r)=>a+Math.round(r.qty||0),0);
+  return {base, restC, since};
+}
+function openTake(focusId){
+  const lastTake=DB.stocktakes[0]||null;
+  TAKE={};
+  DB.drinks.forEach(d=>{ TAKE[d.id]=Math.max(0,Math.floor((roundLeft(d)||0)/Ml(d))); });
+  const rows=DB.drinks.map(d=>`
+    <div style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div class="row" style="border:none;padding:2px 0">
+        <div class="l"><b style="font-size:13.5px">${esc(d.name)}</b><span>${Ml(d)} ml bottle · ~${TAKE[d.id]} on shelf now</span></div>
+        <div class="r"><b class="money" style="font-size:15px" id="ban-${d.id}"></b></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+        <label class="lbl" style="margin:0;width:104px;flex:none">Bottles now</label>
+        <input type="number" min="0" value="${TAKE[d.id]}" id="tk-${d.id}" style="flex:1;margin:0" oninput="bandOne('${d.id}')">
+      </div>
+      <div class="mini" id="bandm-${d.id}" style="margin-top:4px"></div>
+    </div>`).join('');
+  openSheet(`
+    <h3 class="serif">Count shelf · stock-take</h3>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Type how many whole bottles are on the shelf <b>right now</b> (not what the ledger thinks). Kaunta values what the consumed stock should have earned — per liquor and in total — and keeps it as a dated record.</p>
+    <div id="takeRows">${rows}</div>
+    <div class="subrow" style="border:none;padding:12px 0 4px"><span>Expected for consumed stock</span><b class="money" id="takeExpected">KES 0 – 0</b></div>
+    <div class="subrow" style="border:none;padding:4px 0"><span>Ledger since last take</span><b id="takeLedger">KES 0</b></div>
+    <div class="ctlbl" style="margin-top:6px">Note (optional)</div>
+    <input id="tkNote" placeholder="e.g. spot count after Friday night">
+    <button class="btn primary" style="margin-top:12px" onclick="saveTake()">Save stock-take · record valuation</button>
+    <div class="ctlbl" style="margin-top:16px">Past stock-takes</div>
+    <div id="takeHist"></div>
+  `);
+  DB.drinks.forEach(d=>bandOne(d.id));
+  renderTakeHist();
+  if(focusId){ const el=document.getElementById('tk-'+focusId); if(el) setTimeout(()=>{ el.focus(); el.select(); },350); }
+}
+function bandOne(id){
+  const d=DB.drinks.find(x=>x.id===id); if(!d) return;
+  const el=document.getElementById('tk-'+id);
+  const c=Math.max(0,Math.round(parseFloat(el?el.value:0)||0));
+  TAKE[id]=c;
+  const {base,restC,since}=takeBase(id);
+  const consumedB=Math.max(0, base+restC-c);
+  const band=drinkBand(d,consumedB);
+  const ledger=DB.sales.filter(s=>s.drink===id && s.t>(since||0)).reduce((a,s)=>a+s.price,0);
+  const b=document.getElementById('ban-'+id); if(b) b.textContent='KES '+band.min+' – '+band.max;
+  const m=document.getElementById('bandm-'+id); if(m) m.innerHTML='consumed <b>'+(consumedB).toFixed(1)+' bottles</b> · ledger <b>'+kes(ledger)+'</b>';
+  computeTakeTotals();
+}
+function computeTakeTotals(){
+  let Tmin=0,Tmax=0,Tbook=0;
+  DB.drinks.forEach(d=>{
+    if(TAKE[d.id]==null) return;
+    const {base,restC,since}=takeBase(d.id);
+    const band=drinkBand(d,Math.max(0, base+restC-TAKE[d.id]));
+    Tmin+=band.min; Tmax+=band.max;
+    Tbook+=DB.sales.filter(s=>s.drink===d.id && s.t>(since||0)).reduce((a,s)=>a+s.price,0);
+  });
+  const e=document.getElementById('takeExpected'); if(e) e.textContent='KES '+Tmin.toLocaleString('en-KE')+' – '+Tmax.toLocaleString('en-KE');
+  const l=document.getElementById('takeLedger'); if(l) l.textContent=kes(Tbook);
+}
+function renderTakeHist(){
+  const el=document.getElementById('takeHist'); if(!el) return;
+  const list=[...DB.stocktakes].reverse().slice(-5);
+  el.innerHTML = list.length? list.map(st=>{
+    const t=st.totals||{};
+    const when=new Date(st.t).toLocaleString('en-KE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    return `<div class="row" style="padding:6px 0"><div class="l"><b>${when}</b><span>${esc(st.note||'stock-take')}</span></div><div class="r"><b class="money" style="font-size:13px">KES ${Math.round(t.min||0)} – ${Math.round(t.max||0)}</b><br><span class="mini" style="margin:0">ledger ${kes(t.ledger||0)}</span></div></div>`;
+  }).join('') : `<p class="mini" style="margin-top:4px">No stock-takes yet — this becomes your first record.</p>`;
+}
+function saveTake(){
+  const note=(document.getElementById('tkNote')?document.getElementById('tkNote').value:'').trim();
+  const st=curStaff(), rid=oid(), t=Date.now();
+  DB.drinks.forEach(d=>{ if(TAKE[d.id]!=null){ d.open=Math.max(0,Math.round(TAKE[d.id])); d.stockMl=d.open*Ml(d); } });
+  const counts={}; DB.drinks.forEach(d=>{ if(TAKE[d.id]!=null) counts[d.id]=Math.max(0,Math.round(TAKE[d.id])); });
+  let a=0,b=0,c=0;
+  DB.drinks.forEach(d=>{
+    if(TAKE[d.id]==null) return;
+    const {base,restC,since}=takeBase(d.id);
+    const band=drinkBand(d,Math.max(0, base+restC-TAKE[d.id]));
+    a+=band.min; b+=band.max;
+    c+=DB.sales.filter(s=>s.drink===d.id && s.t>(since||0)).reduce((x,s)=>x+s.price,0);
+  });
+  const totals={min:Math.round(a),max:Math.round(b),ledger:c, from:takeSince(), note};
+  DB.stocktakes.unshift({id:rid, t, note, counts, totals});
+  save();
+  enqueue('stocktake',{id:rid, note, counts, totals, t, from:takeSince(), uid:st.id, name:st.name});
+  closeSheet(); toast('Stock-take saved — valuation recorded'); chime();
+  renderStock(); renderDash();
+}
+function addToTake(id){ openTake(id); }
 function openRestock(id){
   const d=DB.drinks.find(x=>x.id===id);
   openSheet(`
@@ -1543,7 +1736,7 @@ function openRestock(id){
 function doRestock(id){
   const q=Math.max(1,Math.round(parseFloat(document.getElementById('rsQty').value)||0));
   const d=DB.drinks.find(x=>x.id===id); if(!d) return;
-  d.open+=q; DB.restocks.push({drink:id,qty:q,t:Date.now()});
+  d.open+=q; d.stockMl=(roundLeft(d)||0)+q*Ml(d); DB.restocks.push({drink:id,qty:q,t:Date.now()});
   save(); enqueue('restock',{drink:id,qty:q,t:Date.now()}); closeSheet();
   toast(d.name+' +'+q+' bottles'); renderStock(); renderDash();
 }
@@ -1673,6 +1866,7 @@ function doEndShift(){
 function setOpen(id,n){
   const d=DB.drinks.find(x=>x.id===id);
   d.open=Math.max(0,d.open+n);
+  d.stockMl=d.open*Ml(d);
   document.getElementById('op-'+id).textContent=d.open;
   save(); enqueue('set_open',{drink:id,open:d.open}); renderStock(); renderDash();
 }
@@ -1701,13 +1895,13 @@ function addDrink(){
   const id='d'+Date.now();
   const dd={id, name:n, size:Math.max(50,parseFloat(document.getElementById('ndSize').value)||250),
     full:+document.getElementById('ndFull').value||0, half:+document.getElementById('ndHalf').value||0, quarter:+document.getElementById('ndQ').value||0,
-    open:0, soldMl:0, divisible:1, shot_ml:0, shot_price:0};
+    open:0, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:0};
   DB.drinks.push(dd);
   save(); enqueue('add_drink',{id,name:n,size:dd.size,full:dd.full,half:dd.half,quarter:dd.quarter,divisible:1,shot_ml:0,shot_price:0});
   closeSheet(); toast(n+' added to the list'); renderStock(); renderSell();
 }
 function newDay(){
-  if(!confirm('Start a new day?\nSales stay in history, stock resets and any open shift is handed over.')) return;
+  if(!confirm('Start a new day?\nSales stay in history, today\'s sold-report resets (what is still on the shelf carries over to tomorrow), and any open shift is handed over.')) return;
   const s0=openShift();
   if(s0){ s0.close_at=Date.now(); enqueue('set_shift',{action:'close',id:s0.id,t:Date.now()}); }
   DB.drinks.forEach(d=>d.soldMl=0);
@@ -1798,7 +1992,7 @@ function saveBar(){
 function wipeAll(){
   if(!confirm('Erase ALL data and start fresh?')) return;
   localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY);
-  DB={bar:'Mama Pima Gardens', drinks:DEF_DRINKS.map(d=>({...d})), sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false, restocks:[], shifts:[]};
+  DB={bar:'Mama Pima Gardens', drinks:DEF_DRINKS.map(d=>({...d})), sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false, restocks:[], shifts:[], stocktakes:[]};
   save(); closeSheet(); go('dash'); renderDash(); renderStock(); toast('Fresh start. Tap the counter!');
 }
 

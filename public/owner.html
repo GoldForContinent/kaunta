@@ -301,6 +301,7 @@ function ownerDismissAnnounce(){
 
 async function loadSummary(){
   const from=new Date(); from.setHours(0,0,0,0);
+  window._SFROM=from.getTime();
   const tz=-from.getTimezoneOffset();
   const r=await api('/api/summary?from='+from.getTime()+'&until='+Date.now()+'&tz='+tz,'');
   if(!r.ok){ if(r.data.error==='Not logged in'||r.data.error==='Session expired — log in again'){ toSignIn(); } return; }
@@ -367,11 +368,13 @@ function renderStock(d){
   const el=document.getElementById('stock'); el.innerHTML='';
   if(!d.drinks||!d.drinks.length){ el.innerHTML='<div class="empty">No drinks yet — add them from the app.</div>'; return; }
   d.drinks.forEach(x=>{
-    const total=x.open*x.size, left=Math.max(0,total-x.soldMl), pct=Math.max(0,Math.min(100,left/Math.max(1,total)*100));
+    const stMl=(+x.stockMl!==undefined&&+x.stockMl!==null)? +x.stockMl : (+x.open||0)*(+x.size||0);
+    const total=stMl+(+x.soldMl||0), left=Math.max(0,stMl);
+    const pct=total>0?Math.max(0,Math.min(100,left/Math.max(1,total)*100)):0;
     const cls=left<=0?'red':(pct<25?'grn':'');
     const row=document.createElement('div');
     row.style.marginBottom='12px';
-    row.innerHTML='<div class="row" style="border:none;padding:3px 0"><div class="l"><b style="font-size:13.5px">'+x.name+'</b><span>'+left.toFixed(0)+' / '+total+' ml</span></div><div class="r" style="font-family:var(--serif);font-weight:700;color:'+(cls==='red'?'var(--ember)':'var(--gold)')+'">'+(x.open>0?(left/ (x.size||1)).toFixed(1)+' bots':('0 / '+x.open+' open'))+'</div></div><div class="gauge"><i class="'+cls+'" style="width:'+pct+'%"></i></div>';
+    row.innerHTML='<div class="row" style="border:none;padding:3px 0"><div class="l"><b style="font-size:13.5px">'+x.name+'</b><span>'+left.toFixed(0)+' / '+total.toFixed(0)+' ml left</span></div><div class="r" style="font-family:var(--serif);font-weight:700;color:'+(cls==='red'?'var(--ember)':'var(--gold)')+'">'+((+x.size)>0?(left/(+x.size||1)).toFixed(1)+' bots':'0')+'</div></div><div class="gauge"><i class="'+cls+'" style="width:'+pct+'%"></i></div>';
     el.appendChild(row);
   });
 }
@@ -379,13 +382,21 @@ let TAKE_COUNTS={}, LAST_SUMMARY=null;
 function renderStocktake(d){
   const el=document.getElementById('stocktake'); el.innerHTML='';
   if(!d.drinks||!d.drinks.length){ el.innerHTML='<div class="empty">Add drinks from the counter app first.</div>'; return; }
-  const agg=d.drink_agg||{};
-  const restockQ=id=>(d.restocks||[]).filter(r=>r.drink===id).reduce((a,r)=>a+r.qty,0);
+  const lastTake=d.last_take||null;
+  const takeSince=(lastTake?lastTake.t:(window._SFROM||0));
+  const prevC={};
+  if(lastTake){ try{ prevC=JSON.parse(lastTake.counts||'{}'); }catch(e){} }
+  const agg=d.take_agg||{};
+  const restockQ=id=>(d.restocks||[]).filter(r=>r.drink===id && r.t>takeSince).reduce((a,r)=>a+r.qty,0);
   let Tmin=0,Tmax=0,Tbook=0;
   const rows=d.drinks.map(x=>{
-    const size=+x.size||0, has=(+x.open||0)+restockQ(x.id);
-    if(TAKE_COUNTS[x.id]===undefined) TAKE_COUNTS[x.id]=Math.round(Math.max(0,has-(+x.soldMl||0)/size));
-    const c=TAKE_COUNTS[x.id], soldB=Math.max(0,has-c);
+    const size=+x.size||1;
+    const stMl=(+x.stockMl!==undefined&&+x.stockMl!==null)? +x.stockMl : (+x.open||0)*size;
+    if(TAKE_COUNTS[x.id]===undefined) TAKE_COUNTS[x.id]=Math.max(0,Math.floor(stMl/size));
+    const c=TAKE_COUNTS[x.id];
+    const base=(prevC[x.id]!=null)? Math.max(0,Math.round(prevC[x.id])) : Math.max(0,Math.round(+x.open||0));
+    const has=base+restockQ(x.id);
+    const soldB=Math.max(0,has-c);
     const band=drinkBand(x,soldB);
     const book=agg[x.id]||0;
     Tmin+=band.min; Tmax+=band.max; Tbook+=book;
@@ -400,13 +411,26 @@ function renderStocktake(d){
       '</div>'+
       '<div class="mini" style="margin:6px 0 0">expected <b>'+kes(band.min)+'–'+kes(band.max)+'</b> · ledger '+kes(book)+flag+'</div></div></div>';
   }).join('');
-  const diff=Tbook-Tmin;
   const wind=(Tbook<Tmin-1)||(Tbook>Tmax+1);
-  el.innerHTML='<div class="subrow" style="border:none;font-size:11px;color:var(--dim);padding-bottom:4px">Set what is on the shelf now — the expected money band is what those bottles should have earned. Compare with the ledger.</div>'+rows+
-    '<div class="subrow" style="margin-top:8px"><span>Expected today</span><b class="money">KES '+kes(Tmin)+' – '+kes(Tmax)+'</b></div>'+
+  let hist='';
+  (d.stocktakes||[]).forEach(st=>{
+    let t={}; try{ t=JSON.parse(st.totals||'{}'); }catch(e){}
+    const when=(new Date(st.t)).toLocaleDateString('en-KE',{day:'numeric',month:'short'})+' '+hhmm(st.t);
+    hist+='<div class="row" style="padding:5px 0"><div class="l"><b>'+when+'</b><span>'+esc(st.note||(st.by_name||'stock-take'))+'</span></div><div class="r"><b class="money" style="font-size:13px">KES '+kes(t.min||0)+' – '+kes(t.max||0)+'</b><br><span class="mini" style="margin:0">ledger '+kes(t.ledger||0)+'</span></div></div>';
+  });
+  el.innerHTML='<div class="subrow" style="border:none;font-size:11px;color:var(--dim);padding-bottom:4px">Set what is on the shelf now — the expected money band is what those bottles should have earned. Compare with the ledger, then save it as a dated record.</div>'+rows+
+    '<div class="subrow" style="margin-top:8px"><span>Expected since last take</span><b class="money">KES '+kes(Tmin)+' – '+kes(Tmax)+'</b></div>'+
     '<div class="subrow"><span>Recorded on ledger</span><b '+(wind?'style="color:var(--ember)"':'')+'>'+kes(Tbook)+'</b></div>'+
-    '<div class="subrow"><span>Vs low end</span><b class="money '+(diff>=-1?'grn':'red')+'">'+(diff>0?'+':'')+kes(diff)+'</b></div>'+
-    '<button class="btn small ghost" style="margin-top:10px" onclick="takeReset()">Reset counts</button>';
+    '<div class="rowflex" style="margin-top:10px;gap:8px">'+
+      '<button class="btn primary" style="flex:1" onclick="saveTakeOwner()">Save stock-take · record</button>'+
+      '<button class="btn small ghost" style="flex:0 0 auto" onclick="takeReset()">Reset counts</button>'+
+    '</div>'+
+    (hist? '<div class="ctlbl" style="margin-top:16px">Recent stock-takes</div>'+hist : '<p class="mini" style="margin-top:8px">No stock-takes yet — save one and it becomes a dated record with its valuation.</p>');
+}
+function saveTakeOwner(){
+  const note=(prompt('Note for this stock-take (optional):')||'').trim();
+  const from=(LAST_SUMMARY&&LAST_SUMMARY.last_take)? LAST_SUMMARY.last_take.t : (window._SFROM||0);
+  doOp([{type:'stocktake',oid:oid(),counts:Object.assign({},TAKE_COUNTS),note,from,t:Date.now(),uid:PROFILE?PROFILE.id:'',name:PROFILE?PROFILE.name:''}], ()=>toastRes('Stock-take saved — valuation recorded'));
 }
 function takeAdj(id,di){ if(TAKE_COUNTS[id]===undefined) TAKE_COUNTS[id]=0; TAKE_COUNTS[id]=Math.max(0,(TAKE_COUNTS[id]||0)+di); if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY); }
 function takeSet(id,v){
@@ -506,7 +530,7 @@ function renderFeed(feed){
   el.innerHTML=feed.map(s=>{
     const tm=new Date(s.t);
     const lbl=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0');
-    return '<div class="row"><div class="l"><b>'+s.name+' <span class="tag '+(s.size||'full')+'">'+cap(s.size||'Full')+'</span></b><span>'+lbl+' · '+(s.staff||s.who||'over counter')+'</span></div>'+
+    return '<div class="row"><div class="l"><b>'+s.name+' <span class="tag '+(s.size||'full')+'">'+cap(s.size||'Full')+'</span>'+(s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':'')+'</b><span>'+lbl+' · '+(s.staff||s.who||'over counter')+'</span></div>'+
       '<div class="r"><b class="money" style="font-size:15px">'+kes(s.price)+'</b><br><span class="tag '+s.pay+'">'+({cash:'Cash',mpesa:'M-Pesa',deni:'Debt'}[s.pay]||s.pay)+'</span></div></div>';
   }).join('');
 }

@@ -12,20 +12,37 @@ export async function summaryHandler({ DB }, ctx, q) {
 
   const sub = await subOf(DB, barId);
 
-  const [totRows, debts, drinks, salesRes, meta, regsRes, restocksRes, shiftsRes] = await Promise.all([
+  const [totRows, debts, drinks, salesRes, meta, regsRes, restocksRes, shiftsRes, stocktakesRes, takeAggRes] = await Promise.all([
     DB.prepare(`SELECT pay, COALESCE(SUM(price),0) AS s, COUNT(*) AS n FROM sales
                 WHERE bar_id = ? AND t >= ? AND t <= ? AND drink NOT IN ('_pay','_deni') GROUP BY pay`)
       .bind(barId, from, until).all(),
     DB.prepare('SELECT name, amount FROM debts WHERE bar_id = ? AND amount > 0 ORDER BY amount DESC LIMIT 200').bind(barId).all(),
     DB.prepare('SELECT * FROM drinks WHERE bar_id = ? ORDER BY name').bind(barId).all(),
-    DB.prepare(`SELECT id, t, drink, size, qty, price, pay, who, uid, staff FROM sales
+    DB.prepare(`SELECT id, t, drink, size, qty, price, pay, who, uid, staff, round FROM sales
                 WHERE bar_id = ? AND t >= ? AND t <= ? AND drink NOT IN ('_pay','_deni') ORDER BY id DESC LIMIT 4000`)
       .bind(barId, from, until).all(),
     DB.prepare('SELECT open FROM bar_meta WHERE bar_id = ?').bind(barId).first(),
     DB.prepare('SELECT name, cnt FROM regs WHERE bar_id = ? ORDER BY cnt DESC LIMIT 10').bind(barId).all(),
     DB.prepare('SELECT drink, qty, t FROM restocks WHERE bar_id = ? AND t >= ? ORDER BY t ASC LIMIT 500').bind(barId, from).all(),
     DB.prepare('SELECT * FROM shifts WHERE bar_id = ? ORDER BY open_at DESC LIMIT 20').bind(barId).all(),
+    DB.prepare('SELECT * FROM stocktakes WHERE bar_id = ? ORDER BY t DESC LIMIT 20').bind(barId).all(),
+    DB.prepare(`SELECT drink, COALESCE(SUM(price),0) AS s FROM sales
+                WHERE bar_id = ? AND t > ? AND t <= ? AND drink NOT IN ('_pay','_deni') GROUP BY drink`)
+      .bind(barId, from, until).all(),
   ]);
+
+  // Ledger since the most recent stock-take (used by the stock-take card).
+  const lastTake = (stocktakesRes.results || [])[0] || null;
+  const takeSince = lastTake ? lastTake.t : from;
+  const takeAgg = {};
+  if (takeSince > from) {
+    const r2 = await DB.prepare(`SELECT drink, COALESCE(SUM(price),0) AS s FROM sales
+                WHERE bar_id = ? AND t > ? AND t <= ? AND drink NOT IN ('_pay','_deni') GROUP BY drink`)
+      .bind(barId, takeSince, until).all();
+    r2.results.forEach((x) => { takeAgg[x.drink] = x.s; });
+  } else {
+    (takeAggRes.results || []).forEach((x) => { takeAgg[x.drink] = x.s; });
+  }
 
   const totals = { cash: 0, mpesa: 0, deni: 0, count: 0 };
   (totRows.results || []).forEach((r) => {
@@ -61,6 +78,7 @@ export async function summaryHandler({ DB }, ctx, q) {
     return {
       t: s.t, drink: s.drink, name: d ? d.name : s.drink, size: s.size, qty: s.qty,
       price: s.price, pay: s.pay, who: s.who, uid: s.uid, staff: s.staff, dname: d ? d.name : '',
+      round: s.round || '', id: s.id,
     };
   });
 
@@ -98,6 +116,9 @@ export async function summaryHandler({ DB }, ctx, q) {
     regs: regsRes.results || [],
     restocks: restocksRes.results || [],
     shifts,
+    stocktakes: stocktakesRes.results || [],
+    last_take: lastTake,
+    take_agg: takeAgg,
     drink_agg: drinkAgg,
     uid_totals: uidAgg,
     server_time: now,
