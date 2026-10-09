@@ -1896,17 +1896,34 @@ async function fetchStaff(){
 }
 function endShift(){
   const s=openShift(); if(!s) return toast('No open shift');
+  const sales=DB.sales.filter(x=>x.t>=(s.open_at||0));
+  const expCash=sales.filter(x=>x.pay==='cash').reduce((a,x)=>a+(x.price||0),0);
+  const expMpesa=sales.filter(x=>x.pay==='mpesa').reduce((a,x)=>a+(x.price||0),0);
+  const expDeni=sales.filter(x=>x.pay==='deni').reduce((a,x)=>a+(x.price||0),0);
   openSheet(`
     <h3 class="serif">Hand over · ${esc(s.user_name||'this shift')}</h3>
-    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Count the till now and type the amounts — the owner compares them against the shift's sales.</p>
-    <label class="lbl">Cash in till (KES)</label>
-    <input id="hoCash" type="number" placeholder="0">
-    <label class="lbl">M-Pesa received (KES)</label>
-    <input id="hoMpesa" type="number" placeholder="0">
-    <label class="lbl">Debt outstanding (KES)</label>
-    <input id="hoDeni" type="number" placeholder="0">
-    <button class="btn primary" onclick="doEndShift()">Hand over now</button>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:12px">Count the till, then type what you actually have. Kaunta shows the difference from the books so the handover is clean.</p>
+    <div class="subrow"><span>Sales this shift</span><b>${sales.length} · ${kes(expCash+expMpesa+expDeni)}</b></div>
+    <div class="subrow"><span>Expected cash</span><b>${kes(expCash)}</b></div>
+    <div class="subrow"><span>Expected M-Pesa</span><b>${kes(expMpesa)}</b></div>
+    <div class="subrow"><span>Expected debt</span><b>${kes(expDeni)}</b></div>
+    <label class="lbl">Cash counted (KES)</label>
+    <input id="hoCash" type="number" placeholder="0" oninput="hoCalc(${expCash},${expMpesa},${expDeni})">
+    <label class="lbl">M-Pesa counted (KES)</label>
+    <input id="hoMpesa" type="number" placeholder="0" oninput="hoCalc(${expCash},${expMpesa},${expDeni})">
+    <label class="lbl">Debt book (KES)</label>
+    <input id="hoDeni" type="number" placeholder="0" oninput="hoCalc(${expCash},${expMpesa},${expDeni})">
+    <div class="mini" id="hoVar" style="margin-top:8px"></div>
+    <button class="btn primary" onclick="doEndShift()">Hand over &amp; end shift</button>
+    <button class="btn ghost" style="margin-top:8px;color:var(--ember)" onclick="closeSheet()">Cancel</button>
   `);
+  hoCalc(expCash,expMpesa,expDeni);
+}
+function hoCalc(ec,em,ed){
+  const val=id=>{ const el=document.getElementById(id); return el?(parseFloat(el.value)||0):0; };
+  const diff=(val('hoCash')-ec)+(val('hoMpesa')-em)+(val('hoDeni')-ed);
+  const el=document.getElementById('hoVar'); if(!el) return;
+  el.innerHTML = Math.abs(diff)<1 ? '<span style="color:var(--mpesa)">✓ Matches the books</span>' : '<span style="color:var(--ember)">Variance '+kes(diff)+' vs the books</span>';
 }
 function doEndShift(){
   const s=openShift(); if(!s){ closeSheet(); return; }
