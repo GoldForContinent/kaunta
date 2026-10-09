@@ -1683,7 +1683,7 @@ function removeDrinkLocal(id){
   if(!id) return;
   DB.drinks=(DB.drinks||[]).filter(d=>d.id!==id);
   DB.restocks=(DB.restocks||[]).filter(r=>r.drink!==id);
-  delete TAKE[id];
+  try{ delete TAKE[id]; }catch(e){}
 }
 /* Delete a drink: tombstone via the append-only change log so every device follows. */
 function delDrink(id){
