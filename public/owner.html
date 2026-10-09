@@ -367,15 +367,16 @@ async function loadSummary(){
   countUp('heroTotal', d.totals.total);
   document.getElementById('heroDeni').textContent=kes(d.totals.deni);
   document.getElementById('heroSales').textContent=d.totals.count;
-  document.getElementById('heroShift').textContent=fmtShift(d.shift_open);
+  document.getElementById('heroShift').textContent=fmtShift(d.shift_open, d.server_time);
   document.getElementById('sCash').textContent=kes(d.totals.cash);
   document.getElementById('sMpesa').textContent=kes(d.totals.mpesa);
   document.getElementById('sDebtDay').textContent=kes(d.totals.deni);
   document.getElementById('sCount').textContent=d.totals.count;
 
-  const hh=d.hourly||new Array(24).fill(0);
-  const max=Math.max(...hh,1);
-  document.getElementById('heat').innerHTML=hh.map((n,i)=>{
+  const hkes=d.hourlyKes||d.hourly?.map(x=>0)||new Array(24).fill(0);
+  const max=Math.max(...hkes,1);
+  document.getElementById('heat').title='Pace today (KES/hour)';
+  document.getElementById('heat').innerHTML=hkes.map((n,i)=>{
     return '<i '+((n>0)?'data-v':'')+' style="opacity:'+(n>0?.5+n/max*.5:1)+'"></i>';
   }).join('');
 
@@ -387,8 +388,9 @@ async function loadSummary(){
   renderDebts(d);
   renderFeed(d.feed);
 }
-function fmtShift(openMs){
-  const mins=Math.max(0,Math.round((Date.now()-openMs)/60000));
+function fmtShift(openMs, serverMs){
+  const base=serverMs||Date.now();
+  const mins=Math.max(0,Math.round((base-openMs)/60000));
   const h=Math.floor(mins/60), m=mins%60;
   return (h>0?h+'h ':'')+m+'m';
 }
@@ -431,9 +433,9 @@ function renderStocktake(d){
   const rows=d.drinks.map(x=>{
     const size=+x.size||1;
     const stMl=(+x.stockMl!==undefined&&+x.stockMl!==null)? +x.stockMl : (+x.open||0)*size;
-    if(TAKE_COUNTS[x.id]===undefined) TAKE_COUNTS[x.id]=Math.max(0,Math.floor(stMl/size));
+    if(TAKE_COUNTS[x.id]===undefined) TAKE_COUNTS[x.id]=Math.max(0,Math.round(stMl/size*100)/100);
     const c=TAKE_COUNTS[x.id];
-    const base=(prevC[x.id]!=null)? Math.max(0,Math.round(prevC[x.id])) : Math.max(0,Math.round(+x.open||0));
+    const base=(prevC[x.id]!=null)? Math.max(0,Math.round(Number(prevC[x.id])*100)/100) : Math.max(0,Math.round(+x.open||0));
     const has=base+restockQ(x.id);
     const soldB=Math.max(0,has-c);
     const band=drinkBand(x,soldB);
@@ -445,7 +447,7 @@ function renderStocktake(d){
         '<span>sold '+soldB.toFixed(1)+' of '+has+' opened'+(restockQ(x.id)?(' (+'+restockQ(x.id)+' refill)'):'')+'</span></div>'+
       '<div class="r"><div style="display:flex;align-items:center;gap:6px">'+
         '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="takeAdj(\''+x.id+'\',-1)">−</button>'+
-        '<input type="number" value="'+c+'" onchange="takeSet(\''+x.id+'\',this.value)" style="width:72px;text-align:center;padding:8px;margin:0" title="count now on shelf">'+
+        '<input type="number" step="0.25" value="'+c+'" onchange="takeSet(\''+x.id+'\',this.value)" style="width:72px;text-align:center;padding:8px;margin:0" title="count now on shelf (halves/quarters allowed)">'+
         '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="takeAdj(\''+x.id+'\',1)">+</button>'+
       '</div>'+
       '<div class="mini" style="margin:6px 0 0">expected <b>'+kes(band.min)+'–'+kes(band.max)+'</b> · ledger '+kes(book)+flag+'</div></div></div>';
@@ -460,6 +462,7 @@ function renderStocktake(d){
   el.innerHTML='<div class="subrow" style="border:none;font-size:11px;color:var(--dim);padding-bottom:4px">Set what is on the shelf now — the expected money band is what those bottles should have earned. Compare with the ledger, then save it as a dated record.</div>'+rows+
     '<div class="subrow" style="margin-top:8px"><span>Expected since last take</span><b class="money">KES '+kes(Tmin)+' – '+kes(Tmax)+'</b></div>'+
     '<div class="subrow"><span>Recorded on ledger</span><b '+(wind?'style="color:var(--ember)"':'')+'>'+kes(Tbook)+'</b></div>'+
+    '<label class="row" style="border:none;align-items:center;gap:10px;margin:10px 0 0;cursor:pointer"><input type="checkbox" id="tkShelfOwner" checked style="width:auto;margin:0;flex:none"><span class="mini" style="margin:0">Lock the shelf to these bottles — starts a fresh poured baseline from this count.</span></label>'+
     '<div class="rowflex" style="margin-top:10px;gap:8px">'+
       '<button class="btn primary" style="flex:1" onclick="saveTakeOwner()">Save stock-take · record</button>'+
       '<button class="btn small ghost" style="flex:0 0 auto" onclick="takeReset()">Reset counts</button>'+
@@ -468,12 +471,14 @@ function renderStocktake(d){
 }
 function saveTakeOwner(){
   const note=(prompt('Note for this stock-take (optional):')||'').trim();
+  const el=document.getElementById('tkShelfOwner');
+  const setShelf=!!(el&&el.checked);
   const from=(LAST_SUMMARY&&LAST_SUMMARY.last_take)? LAST_SUMMARY.last_take.t : (window._SFROM||0);
-  doOp([{type:'stocktake',oid:oid(),counts:Object.assign({},TAKE_COUNTS),note,from,t:Date.now(),uid:PROFILE?PROFILE.id:'',name:PROFILE?PROFILE.name:''}], ()=>toastRes('Stock-take saved — valuation recorded'));
+  doOp([{type:'stocktake',oid:oid(),counts:Object.assign({},TAKE_COUNTS),note,from,t:Date.now(),uid:PROFILE?PROFILE.id:'',name:PROFILE?PROFILE.name:'',set_shelf:setShelf?1:0}], ()=>toastRes(setShelf?'Stock-take saved — shelf locked as baseline':'Stock-take saved — valuation recorded'));
 }
 function takeAdj(id,di){ if(TAKE_COUNTS[id]===undefined) TAKE_COUNTS[id]=0; TAKE_COUNTS[id]=Math.max(0,(TAKE_COUNTS[id]||0)+di); if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY); }
 function takeSet(id,v){
-  const n=Math.round(parseFloat(v)); if(!isFinite(n)||n<0) { renderStocktake(LAST_SUMMARY); return; }
+  const n=Math.round((parseFloat(v)||0)*100)/100; if(!isFinite(n)||n<0) { renderStocktake(LAST_SUMMARY); return; }
   TAKE_COUNTS[id]=n; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY);
 }
 function takeReset(){ TAKE_COUNTS={}; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY); }

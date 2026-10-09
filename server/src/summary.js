@@ -56,12 +56,14 @@ export async function summaryHandler({ DB }, ctx, q) {
   const sales = salesRaw.slice().reverse();
 
   const hourly = new Array(24).fill(0);
+  const hourlyKes = new Array(24).fill(0);
   const agg = {};
   const drinkAgg = {};   // drinkId -> KES recorded today (all payment methods)
   const uidAgg = {};     // staff uid -> {name, cash, mpesa, deni, n}
   salesRaw.forEach((s) => {
     const h = new Date(s.t + tzMin * 60000).getUTCHours();
     hourly[h] = (hourly[h] || 0) + 1;
+    hourlyKes[h] = (hourlyKes[h] || 0) + (s.price || 0);
     agg[s.drink] = (agg[s.drink] || 0) + s.price;
     drinkAgg[s.drink] = (drinkAgg[s.drink] || 0) + s.price;
     if (s.uid) {
@@ -107,6 +109,7 @@ export async function summaryHandler({ DB }, ctx, q) {
     shift_open: meta ? meta.open : now,
     totals,
     hourly,
+    hourlyKes,
     debt_outstanding: debtOutstanding,
     debt_count: debts.results.length,
     drinks: drinks.results || [],

@@ -198,9 +198,10 @@ async function buildStocktake(DB, barId, op, now) {
   const stmts = [];
   const items = {};
   let Tmin = 0, Tmax = 0, Tbook = 0;
+  const setShelf = !!op.set_shelf;
   for (const d of drinks) {
     if (counts[d.id] == null) continue;
-    const cNow = Math.max(0, Math.round(Number(counts[d.id]) || 0));
+    const cNow = Math.max(0, Math.round((Number(counts[d.id]) || 0) * 100) / 100); // bottles; quarter steps allowed
     const prevC = prevCounts[d.id] != null ? Number(prevCounts[d.id]) : null;
     const baseC = prevC != null ? prevC : Math.max(0, Math.round(+d.open || 0));
     const restockC = restockRows.filter((r) => r.drink === d.id).reduce((a, r) => a + (r.qty || 0), 0);
@@ -210,7 +211,12 @@ async function buildStocktake(DB, barId, op, now) {
     const ledger = ledgerBy[d.id] || 0;
     Tmin += band.min; Tmax += band.max; Tbook += ledger;
     items[d.id] = { count: cNow, consumed_bottles: Math.round(consumedB * 100) / 100, size, min: band.min, max: band.max, ledger };
-    stmts.push(['UPDATE drinks SET open = ?, stockMl = ? WHERE bar_id = ? AND id = ?', [cNow, Math.round(cNow * size), barId, d.id]]);
+    const openB = Math.round(cNow);
+    if (setShelf) {
+      stmts.push(['UPDATE drinks SET open = ?, stockMl = ?, soldMl = 0 WHERE bar_id = ? AND id = ?', [openB, Math.round(cNow * size), barId, d.id]]);
+    } else {
+      stmts.push(['UPDATE drinks SET open = ?, stockMl = ? WHERE bar_id = ? AND id = ?', [openB, Math.round(cNow * size), barId, d.id]]);
+    }
   }
   const totals = { min: Tmin, max: Tmax, ledger: Tbook, from: since };
   stmts.push(['INSERT INTO stocktakes (id, bar_id, t, by_user, by_name, note, counts, totals, created_at) VALUES (?,?,?,?,?,?,?,?,?)',

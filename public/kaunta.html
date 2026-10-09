@@ -567,7 +567,7 @@ body.nxt .overlay{padding-top:76px}
         <div class="brand" id="barName">Kaunta<small>Bar Ledger</small></div>
       </div>
       <div class="hd-right">
-        <div class="shift">Shift <b id="shiftTime">0m</b></div>
+        <div class="shift">Shift <b id="shiftTime">0m</b><span id="shiftPill" class="hidden"></span></div>
         <div class="live">Today's take<b id="hdTotal" class="money">KES 0</b></div>
       </div>
       <button class="gear" onclick="openSettings()"><svg class="ic"><use href="#i-gear"/></svg></button>
@@ -870,9 +870,9 @@ function applyRemote(type,p){
     case 'stocktake': {
       const counts=p.counts||{};
       DB.drinks.forEach(d=>{
-        if(counts[d.id]!=null){ d.open=Math.max(0,Math.round(counts[d.id])); d.stockMl=d.open*Ml(d); }
+        if(counts[d.id]!=null){ const c=Math.max(0,Math.round(Number(counts[d.id])*100)/100); d.open=Math.round(c); d.stockMl=Math.round(c*Ml(d)); if(p.set_shelf) d.soldMl=0; }
       });
-      if(p.id) DB.stocktakes.unshift({id:p.id,t:p.t||Date.now(),note:p.note||'',counts:p.counts||{},totals:p.totals||{}});
+      if(p.id) DB.stocktakes.unshift({id:p.id,t:p.t||Date.now(),note:p.note||'',counts:p.counts||{},totals:p.totals||{},set_shelf:!!p.set_shelf});
       break;
     }
     case 'new_day': DB.drinks.forEach(x=>x.soldMl=0); DB.open=p.t||Date.now(); break;
@@ -1416,11 +1416,12 @@ function renderDash(){
   document.getElementById('heroDeni').textContent=kes(deni);
   document.getElementById('heroSales').textContent=kes(t.length);
 
-  /* hour heat */
+  /* hour heat — sales pace by KES per hour */
   let hh=new Array(24).fill(0);
-  t.forEach(s=>hh[new Date(s.t).getHours()]++);
+  t.forEach(s=>{ hh[new Date(s.t).getHours()] += (s.price||0); });
   const max=Math.max(...hh,1);
   const hi=new Date().getHours();
+  const heatEl=document.getElementById('heat'); if(heatEl) heatEl.title='Sales pace today (KES/hour)';
   document.getElementById('heat').innerHTML = hh.map((n,i)=>{
     const v=n? 'data-v':'';
     return `<i ${v} class="${i===hi && n?'hi':''}" style="opacity:${n? .4+n/max*.6 : 1}"></i>`;
@@ -1678,7 +1679,7 @@ function takeBase(id){
 function openTake(focusId){
   const lastTake=DB.stocktakes[0]||null;
   TAKE={};
-  DB.drinks.forEach(d=>{ TAKE[d.id]=Math.max(0,Math.floor((roundLeft(d)||0)/Ml(d))); });
+  DB.drinks.forEach(d=>{ TAKE[d.id]=Math.max(0,Math.round((roundLeft(d)||0)/Ml(d)*100)/100); });
   const rows=DB.drinks.map(d=>`
     <div style="padding:10px 0;border-bottom:1px solid var(--line)">
       <div class="row" style="border:none;padding:2px 0">
@@ -1687,16 +1688,20 @@ function openTake(focusId){
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
         <label class="lbl" style="margin:0;width:104px;flex:none">Bottles now</label>
-        <input type="number" min="0" value="${TAKE[d.id]}" id="tk-${d.id}" style="flex:1;margin:0" oninput="bandOne('${d.id}')">
+        <input type="number" min="0" step="0.25" value="${TAKE[d.id]}" id="tk-${d.id}" style="flex:1;margin:0" oninput="bandOne('${d.id}')">
       </div>
       <div class="mini" id="bandm-${d.id}" style="margin-top:4px"></div>
     </div>`).join('');
   openSheet(`
     <h3 class="serif">Count shelf · stock-take</h3>
-    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Type how many whole bottles are on the shelf <b>right now</b> (not what the ledger thinks). Kaunta values what the consumed stock should have earned — per liquor and in total — and keeps it as a dated record.</p>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Type how many bottles are on the shelf <b>right now</b> — halves and quarters count too (e.g. 1.5). Kaunta values what the consumed stock should have earned — per liquor and in total — and keeps it as a dated record.</p>
     <div id="takeRows">${rows}</div>
     <div class="subrow" style="border:none;padding:12px 0 4px"><span>Expected for consumed stock</span><b class="money" id="takeExpected">KES 0 – 0</b></div>
     <div class="subrow" style="border:none;padding:4px 0"><span>Ledger since last take</span><b id="takeLedger">KES 0</b></div>
+    <label class="row" style="align-items:center;gap:10px;margin:10px 0 0;cursor:pointer;border:none;padding:0">
+      <input type="checkbox" id="tkSetShelf" checked style="width:auto;margin:0;flex:none">
+      <span class="mini" style="margin:0">Start fresh from this count — locks the shelf to these bottles and resets today's poured total.</span>
+    </label>
     <div class="ctlbl" style="margin-top:6px">Note (optional)</div>
     <input id="tkNote" placeholder="e.g. spot count after Friday night">
     <button class="btn primary" style="margin-top:12px" onclick="saveTake()">Save stock-take · record valuation</button>
@@ -1710,7 +1715,7 @@ function openTake(focusId){
 function bandOne(id){
   const d=DB.drinks.find(x=>x.id===id); if(!d) return;
   const el=document.getElementById('tk-'+id);
-  const c=Math.max(0,Math.round(parseFloat(el?el.value:0)||0));
+  const c=Math.max(0,Math.round((parseFloat(el?el.value:0)||0)*100)/100);
   TAKE[id]=c;
   const {base,restC,since}=takeBase(id);
   const consumedB=Math.max(0, base+restC-c);
@@ -1743,9 +1748,10 @@ function renderTakeHist(){
 }
 function saveTake(){
   const note=(document.getElementById('tkNote')?document.getElementById('tkNote').value:'').trim();
+  const setShelf=!!(document.getElementById('tkSetShelf')&&document.getElementById('tkSetShelf').checked);
   const st=curStaff(), rid=oid(), t=Date.now();
-  DB.drinks.forEach(d=>{ if(TAKE[d.id]!=null){ d.open=Math.max(0,Math.round(TAKE[d.id])); d.stockMl=d.open*Ml(d); } });
-  const counts={}; DB.drinks.forEach(d=>{ if(TAKE[d.id]!=null) counts[d.id]=Math.max(0,Math.round(TAKE[d.id])); });
+  DB.drinks.forEach(d=>{ if(TAKE[d.id]!=null){ const c=Math.max(0,Math.round(TAKE[d.id]*100)/100); d.open=Math.round(c); d.stockMl=Math.round(c*Ml(d)); if(setShelf) d.soldMl=0; } });
+  const counts={}; DB.drinks.forEach(d=>{ if(TAKE[d.id]!=null) counts[d.id]=Math.max(0,Math.round(TAKE[d.id]*100)/100); });
   let a=0,b=0,c=0;
   DB.drinks.forEach(d=>{
     if(TAKE[d.id]==null) return;
@@ -1755,10 +1761,10 @@ function saveTake(){
     c+=DB.sales.filter(s=>s.drink===d.id && s.t>(since||0)).reduce((x,s)=>x+s.price,0);
   });
   const totals={min:Math.round(a),max:Math.round(b),ledger:c, from:takeSince(), note};
-  DB.stocktakes.unshift({id:rid, t, note, counts, totals});
+  DB.stocktakes.unshift({id:rid, t, note, counts, totals, set_shelf:setShelf});
   save();
-  enqueue('stocktake',{id:rid, note, counts, totals, t, from:takeSince(), uid:st.id, name:st.name});
-  closeSheet(); toast('Stock-take saved — valuation recorded'); chime();
+  enqueue('stocktake',{id:rid, note, counts, totals, t, from:takeSince(), uid:st.id, name:st.name, set_shelf:setShelf?1:0});
+  closeSheet(); toast(setShelf?'Stock-take saved — shelf locked as baseline':'Stock-take saved — valuation recorded'); chime();
   renderStock(); renderDash();
 }
 function addToTake(id){ openTake(id); }
@@ -2078,11 +2084,14 @@ const IC = n=>'<svg class="ic"><use href="#i-'+n+'"/></svg>';
 
 function tick(){
   const now=new Date();
-  const elapsed=Date.now()-DB.open;
+  const stNow=window._K_LAST_SUMMARY&&window._K_LAST_SUMMARY.server_time||Date.now();
+  const s0=openShift();
+  const elapsed=Math.max(0,stNow-(s0?s0.open_at:DB.open));
   const h=Math.floor(elapsed/3600000), m=Math.floor((elapsed%3600000)/60000);
   document.getElementById('shiftTime').textContent=(h>0?h+'h ':'')+m+'m';
-  const shd=document.getElementById('shDur'), s0=openShift();
-  if(shd&&s0){ const sm=Math.max(0,Math.round((Date.now()-s0.open_at)/60000)); shd.textContent=Math.floor(sm/60)+'h '+sm%60+'m'; }
+  const shd=document.getElementById('shDur');
+  if(shd&&s0){ const sm=Math.max(0,Math.round((stNow-s0.open_at)/60000)); shd.textContent=Math.floor(sm/60)+'h '+sm%60+'m'; }
+  const shP=document.getElementById('shiftPill'); if(shP){ if(s0&&s0.user_name){ shP.textContent=' · '+s0.user_name; shP.classList.remove('hidden'); } else { shP.classList.add('hidden'); } }
   const hh=now.getHours();
   const g=(hh<12?'Good morning':hh<17?'Good afternoon':'Good evening');
   document.getElementById('greet').innerHTML=g+', <span class="em">Boss.</span>';
