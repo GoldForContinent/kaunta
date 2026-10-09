@@ -1,4 +1,5 @@
-const CACHE = 'kaunta-v4';
+const VERSION = 'v5';
+const CACHE = 'kaunta-' + VERSION;
 const ASSETS = [
   './index.html',
   './kaunta.html',
@@ -13,7 +14,10 @@ const ASSETS = [
 
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      // Cache each asset individually so one bad file can't abort the whole install.
+      .then(c => Promise.all(ASSETS.map(a => c.add(a).catch(() => {}))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -23,6 +27,11 @@ self.addEventListener('activate', e => {
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+// A page can ask the waiting worker to take over immediately.
+self.addEventListener('message', e => {
+  if (e.data === 'SKIP_WAITING' || (e.data && e.data.type === 'SKIP_WAITING')) self.skipWaiting();
 });
 
 self.addEventListener('fetch', e => {
@@ -38,7 +47,7 @@ self.addEventListener('fetch', e => {
       fetch(e.request)
         .then(res => {
           const copy = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, copy));
+          caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
           return res;
         })
         .catch(() => caches.match(e.request).then(r => r || caches.match('./kaunta.html')))
@@ -51,7 +60,7 @@ self.addEventListener('fetch', e => {
     caches.match(e.request).then(cached => {
       const fresh = fetch(e.request).then(res => {
         if (res.ok && e.request.url.startsWith(self.location.origin)) {
-          caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+          caches.open(CACHE).then(c => c.put(e.request, res.clone())).catch(() => {});
         }
         return res;
       }).catch(() => cached);

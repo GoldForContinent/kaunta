@@ -2075,7 +2075,7 @@ function openSheet(html){
   document.getElementById('sheet').classList.add('on');
   document.body.classList.add('lock');
 }
-function closeSheet(){ document.getElementById('sheet').classList.remove('on'); document.body.classList.remove('lock'); }
+function closeSheet(){ document.getElementById('sheet').classList.remove('on'); document.body.classList.remove('lock'); if(window._swAfterClose) window._swAfterClose(); }
 let toastT;
 function toast(msg){ const t=document.getElementById('toast'); t.querySelector('span').textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2300); }
 
@@ -2173,7 +2173,27 @@ function installApp(){
 if('serviceWorker' in navigator){
   const ok = location.protocol==='https:' || ['localhost','127.0.0.1'].indexOf(location.hostname)>-1;
   if(ok){
-    window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+    // Apply a newly-deployed version automatically, but only when no sheet is open
+    // so an in-progress sale is never interrupted (data lives in localStorage).
+    const hadController = !!navigator.serviceWorker.controller;
+    let updatePending=false, swReloading=false;
+    const swIdle = ()=>!document.getElementById('sheet').classList.contains('on');
+    const swMaybeReload = ()=>{ if(!updatePending || swReloading || !swIdle()) return; swReloading=true; location.reload(); };
+    window._swAfterClose = swMaybeReload;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(hadController){ updatePending=true; swMaybeReload(); } });
+    window.addEventListener('focus',()=>{ if(updatePending) swMaybeReload(); });
+    window.addEventListener('load',()=>{
+      navigator.serviceWorker.register('sw.js').then(reg=>{
+        try{ reg.update && reg.update(); }catch(e){}
+        if(reg.waiting){ updatePending=true; swMaybeReload(); }
+        reg.addEventListener('updatefound',()=>{
+          const nw=reg.installing; if(!nw) return;
+          nw.addEventListener('statechange',()=>{
+            if(nw.state==='installed' && navigator.serviceWorker.controller){ updatePending=true; swMaybeReload(); }
+          });
+        });
+      }).catch(()=>{});
+    });
     window.addEventListener('beforeinstallprompt',e=>{
       e.preventDefault(); deferredPrompt=e; showInstall();
     });
