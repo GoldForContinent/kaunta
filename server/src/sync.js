@@ -28,6 +28,10 @@ export async function subOf(DB, barId) {
 
 const TYPES = new Set(['sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'new_day', 'set_bar', 'restock', 'set_drink_split', 'set_shift', 'stocktake']);
 
+// Who did it? Ops carry the actor in different fields depending on type.
+function actorId(op) { return String(op.uid || op.by_user || '').slice(0, 64); }
+function actorName(op) { return String(op.name || op.staff || op.by_name || op.who || '').slice(0, 80); }
+
 // ---- expected-money band (mirrors the client's drinkBand/bottleMax) ----
 function serverBottleMax(d) {
   if (!(+d.divisible)) return 0;
@@ -241,7 +245,8 @@ async function makeStmts(DB, barId, ops, now) {
     const oid = String(op.oid || '').slice(0, 64);
     if (!oid || seen.has(oid)) continue;
     seen.add(oid);
-    stmts.push(DB.prepare('INSERT INTO changes (bar_id, type, payload, oid, created_at) VALUES (?,?,?,?,?)').bind(barId, op.type, JSON.stringify(op), oid, now));
+    stmts.push(DB.prepare('INSERT INTO changes (bar_id, type, payload, oid, uid, uname, created_at) VALUES (?,?,?,?,?,?,?)')
+      .bind(barId, op.type, JSON.stringify(op), oid, actorId(op), actorName(op), now));
     if (op.type === 'stocktake') {
       const r = await buildStocktake(DB, barId, op, now);
       for (const [sql, bind] of r.stmts) stmts.push(DB.prepare(sql).bind(...bind));

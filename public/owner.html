@@ -203,6 +203,10 @@ body.nxt .overlay{padding-top:76px}
       <div id="shifts"></div>
     </div>
     <div class="card">
+      <div class="cardhead">Employees</div>
+      <div id="employees"></div>
+    </div>
+    <div class="card">
       <div class="cardhead">Top movers today</div>
       <div id="top"></div>
     </div>
@@ -213,6 +217,10 @@ body.nxt .overlay{padding-top:76px}
     <div class="card">
       <div class="cardhead">Live feed</div>
       <div id="feed"></div>
+    </div>
+    <div class="card">
+      <div class="cardhead">Activity log</div>
+      <div id="audit"></div>
     </div>
   </main>
 </div>
@@ -384,6 +392,8 @@ async function loadSummary(){
   renderTop(d.top);
   renderStocktake(d);
   renderShifts(d);
+  renderEmployees();
+  renderAudit();
   DEBTS_SNAPSHOT = d.debts||[];
   renderDebts(d);
   renderFeed(d.feed);
@@ -519,6 +529,68 @@ function renderShifts(d){
   }
   if(!open&&!uids.length&&!past.length) html='<div class="empty">No shifts yet — bartenders start their shift from the counter app.</div>';
   el.innerHTML=html;
+}
+/* ---- employees (owner-managed roster) ---- */
+async function renderEmployees(){
+  const el=document.getElementById('employees'); if(!el) return;
+  const r=await api('/api/bar/staff');
+  if(!r.ok){ el.innerHTML='<div class="empty">Could not load employees.</div>'; return; }
+  const staff=r.data.staff||[];
+  let h='';
+  if(!staff.length) h='<div class="empty">No employees yet — add your bartenders below.</div>';
+  staff.forEach(s=>{
+    const owner=s.role==='owner';
+    h+='<div class="row"><div class="l"><b>'+esc(s.name||'Staff')+'</b><span>'+(owner?'Owner':(s.phone?('Phone 0'+esc(s.phone)):'Add a phone so they can log in'))+'</span></div>'+
+      (owner?'':'<div class="r" style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn small ghost" onclick="empEdit(\''+s.id+'\')">Edit</button><button class="btn small ghost" style="color:var(--ember)" onclick="empDel(\''+s.id+'\')">Remove</button></div>')+'</div>';
+  });
+  h+='<button class="btn primary" style="margin-top:10px" onclick="empAdd()">+ Add employee</button>';
+  h+='<p class="mini" style="margin-top:8px">Bartenders open the counter app and log in with their phone number + your join code <b>'+esc(JOIN_CODE||'—')+'</b>.</p>';
+  el.innerHTML=h;
+}
+function empAdd(){
+  const name=(prompt('Employee name:')||'').trim(); if(!name) return;
+  const phone=(prompt('Phone number (e.g. 0712345678):')||'').trim(); if(!phone) return;
+  api('/api/bar/staff/add',{name,phone}).then(r=>{ if(!r.ok){ toastRes(r.data.error||'Could not add employee'); return; } toastRes('Added '+name); renderEmployees(); });
+}
+function empEdit(id){
+  const name=(prompt('New name (leave blank to keep):')||'').trim();
+  const phone=(prompt('New phone (leave blank to keep):')||'').trim();
+  if(!name&&!phone){ toastRes('Nothing changed'); return; }
+  const body={id}; if(name) body.name=name; if(phone) body.phone=phone;
+  api('/api/bar/staff/update',body).then(r=>{ if(!r.ok){ toastRes(r.data.error||'Could not update'); return; } toastRes('Employee updated'); renderEmployees(); });
+}
+function empDel(id){
+  if(!confirm('Remove this employee? They will no longer be able to log in.')) return;
+  api('/api/bar/staff/delete',{id}).then(r=>{ if(!r.ok){ toastRes(r.data.error||'Could not remove'); return; } toastRes('Employee removed'); renderEmployees(); });
+}
+/* ---- audit trail ---- */
+function auditText(it){
+  const p=it.payload||{};
+  const dmap={}; (LAST_SUMMARY&&LAST_SUMMARY.drinks||[]).forEach(x=>{ dmap[x.id]=x.name; });
+  const drink=dmap[p.drink]||'a drink';
+  switch(it.type){
+    case 'sale': return 'Sold '+drink+(p.qty>1?' ×'+p.qty:'')+' · '+kes(p.price)+(p.pay?' · '+p.pay:'');
+    case 'restock': return 'Restocked '+drink+' +'+(p.qty||1)+' bottles';
+    case 'set_open': return 'Opened '+drink+' at '+(p.open||0)+' bottles';
+    case 'add_drink': return 'Added '+(p.name||'a drink');
+    case 'set_price': return 'Changed the price of '+drink;
+    case 'set_drink_split': return 'Updated the split for '+drink;
+    case 'stocktake': return 'Stock-take · KES '+Math.round((p.totals&&p.totals.min)||0)+'–'+Math.round((p.totals&&p.totals.max)||0);
+    case 'set_shift': return p.action==='open'?'Started a shift':'Closed a shift';
+    case 'add_debt': return 'Added debt · '+esc(p.name||p.who||'')+' '+kes(p.amount||0);
+    case 'debt_payment': return 'Debt payment · '+kes(p.amount||0);
+    case 'new_day': return 'Started a new day';
+    case 'set_bar': return 'Renamed the bar to '+(p.name||'');
+    default: return it.type;
+  }
+}
+async function renderAudit(){
+  const el=document.getElementById('audit'); if(!el) return;
+  const r=await api('/api/bar/audit');
+  if(!r.ok){ el.innerHTML='<div class="empty">Could not load the activity log.</div>'; return; }
+  const items=r.data.items||[];
+  if(!items.length){ el.innerHTML='<div class="empty">No activity yet.</div>'; return; }
+  el.innerHTML=items.map(it=>'<div class="row"><div class="l"><b>'+esc(it.uname||'Someone')+'</b><span>'+auditText(it)+'</span></div><div class="r"><span class="mini" style="white-space:nowrap">'+hhmm(it.t)+' · '+dstr(it.t)+'</span></div></div>').join('');
 }
 function renderTop(top){
   const el=document.getElementById('top');

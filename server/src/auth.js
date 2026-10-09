@@ -81,10 +81,97 @@ export async function logout({ DB }, token) {
 }
 
 // List the bar's employees (every account attached to this bar), for the
-// "who is on shift" picker on staff phones.
+// "who is on shift" picker and the owner's employee roster.
 export async function barStaff({ DB }, ctx) {
-  const rows = await DB.prepare('SELECT id, name, role FROM users WHERE bar_id = ? ORDER BY name').bind(ctx.bar.id).all();
+  const rows = await DB.prepare('SELECT id, name, role, phone FROM users WHERE bar_id = ? ORDER BY role = \'owner\' DESC, name').bind(ctx.bar.id).all();
   return json({ ok: true, staff: rows.results || [] });
+}
+
+// Normalise a phone number to its last 9 digits — so 0712 345 678,
+// +254712345678 and 254-712-345-678 all map to the same person.
+function normPhone(p) {
+  const digits = String(p || '').replace(/\D/g, '');
+  return digits.slice(-9);
+}
+
+// POS login: owner-assigned phone number + the bar's join code. No email needed.
+export async function staffLogin({ DB }, body) {
+  const phone = normPhone(body.phone);
+  const code = (body.code || '').toString().trim();
+  if (phone.length < 7) return json({ error: 'Enter the phone number your owner added' }, 400);
+  if (!/^\d{6}$/.test(code)) return json({ error: 'The join code is 6 digits — ask your owner' }, 400);
+
+  const bar = await DB.prepare('SELECT id, name, slug, join_code FROM bars WHERE join_code = ?').bind(code).first();
+  if (!bar) return json({ error: 'That bar code is not valid' }, 404);
+
+  const user = await DB.prepare('SELECT * FROM users WHERE bar_id = ? AND phone = ? ORDER BY created_at LIMIT 1').bind(bar.id, phone).first();
+  if (!user) return json({ error: 'No staff with that number at this bar — ask the owner to add you' }, 404);
+
+  const t = token();
+  const now = Date.now();
+  await DB.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?,?,?,?)')
+    .bind(await hashToken(t), user.id, now + 90 * TRIAL, now)
+    .run();
+  return json({ ok: true, token: t, user: pubUser(user), bar_name: bar.name });
+}
+
+// Owner adds an employee (name + phone). They can then log in from the counter.
+export async function addStaff({ DB }, ctx, body) {
+  if (!ctx.user || ctx.user.role !== 'owner') return json({ error: 'Only the owner can manage employees' }, 403);
+  const name = (body.name || '').toString().trim().slice(0, 60);
+  const phone = normPhone(body.phone);
+  if (!name) return json({ error: 'Enter the employee name' }, 400);
+  if (phone.length < 7) return json({ error: 'Enter a valid phone number' }, 400);
+
+  const dupe = await DB.prepare('SELECT id FROM users WHERE bar_id = ? AND phone = ?').bind(ctx.bar.id, phone).first();
+  if (dupe) return json({ error: 'That phone number is already on the roster' }, 409);
+
+  const id = uuid();
+  const salt = randomSalt();
+  const passHash = await hashPassword(token(), salt);   // unusable password — phone login only
+  const email = 'staff.' + id + '@kaunta.staff';
+  await DB.prepare("INSERT INTO users (id, email, pass_hash, pass_salt, name, role, bar_id, phone, created_at) VALUES (?,?,?,?,?, 'staff', ?, ?, ?)")
+    .bind(id, email, passHash, salt, name, ctx.bar.id, phone, Date.now()).run();
+  return json({ ok: true, staff: { id, name, role: 'staff', phone } });
+}
+
+// Owner edits an employee's name and/or phone (blank fields are left unchanged).
+export async function updateStaff({ DB }, ctx, body) {
+  if (!ctx.user || ctx.user.role !== 'owner') return json({ error: 'Only the owner can manage employees' }, 403);
+  const id = (body.id || '').toString();
+  const row = await DB.prepare('SELECT id, role FROM users WHERE id = ? AND bar_id = ?').bind(id, ctx.bar.id).first();
+  if (!row) return json({ error: 'Employee not found' }, 404);
+
+  const hasName = body.name != null;
+  const hasPhone = body.phone != null;
+  if (!hasName && !hasPhone) return json({ error: 'Nothing to change' }, 400);
+
+  const name = hasName ? (body.name || '').toString().trim().slice(0, 60) : null;
+  const phone = hasPhone ? normPhone(body.phone) : null;
+  if (hasName && !name) return json({ error: 'Enter the employee name' }, 400);
+  if (hasPhone && phone.length < 7) return json({ error: 'Enter a valid phone number' }, 400);
+  if (hasPhone) {
+    const dupe = await DB.prepare('SELECT id FROM users WHERE bar_id = ? AND phone = ? AND id <> ?').bind(ctx.bar.id, phone, id).first();
+    if (dupe) return json({ error: 'That phone number is already on the roster' }, 409);
+  }
+
+  await DB.prepare('UPDATE users SET name = COALESCE(?, name), phone = COALESCE(?, phone) WHERE id = ? AND bar_id = ?')
+    .bind(name, phone, id, ctx.bar.id).run();
+  return json({ ok: true });
+}
+
+// Owner removes an employee and any sessions they hold.
+export async function deleteStaff({ DB }, ctx, body) {
+  if (!ctx.user || ctx.user.role !== 'owner') return json({ error: 'Only the owner can manage employees' }, 403);
+  const id = (body.id || '').toString();
+  const row = await DB.prepare('SELECT id, role FROM users WHERE id = ? AND bar_id = ?').bind(id, ctx.bar.id).first();
+  if (!row) return json({ error: 'Employee not found' }, 404);
+  if (row.role === 'owner') return json({ error: 'The owner account cannot be removed' }, 400);
+  await DB.batch([
+    DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id),
+    DB.prepare('DELETE FROM users WHERE id = ? AND bar_id = ?').bind(id, ctx.bar.id),
+  ]);
+  return json({ ok: true });
 }
 
 // Change the logged-in account's password (must supply the current one).
@@ -135,7 +222,7 @@ function genTempPassword() {
 }
 
 function pubUser(u) {
-  return { id: u.id, email: u.email, name: u.name, role: u.role, bar_id: u.bar_id };
+  return { id: u.id, email: u.email, name: u.name, role: u.role, bar_id: u.bar_id, phone: u.phone || '' };
 }
 
 // Attaches { user, bar } to ctx; returns Response on failure.

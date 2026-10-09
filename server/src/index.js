@@ -1,9 +1,10 @@
 // Kaunta API — Cloudflare Worker router.
 
 import { json, corsHeaders } from './util.js';
-import { register, login, logout, requireAuth, changePassword, adminResetPassword, barStaff } from './auth.js';
+import { register, login, logout, requireAuth, changePassword, adminResetPassword, barStaff, staffLogin, addStaff, updateStaff, deleteStaff } from './auth.js';
 import { syncHandler, opHandler } from './sync.js';
 import { summaryHandler } from './summary.js';
+import { auditLog } from './audit.js';
 import { payRequest, payCallback, payVerify, payInfo } from './billing.js';
 import {
   adminStats, adminBars, adminRenew, adminStatus, adminPrice, adminPayments,
@@ -39,6 +40,9 @@ export default {
       if (url.pathname === '/api/login' && req.method === 'POST') {
         return withCors(req, await login(env, await readBody(req)));
       }
+      if (url.pathname === '/api/staff-login' && req.method === 'POST') {
+        return withCors(req, await staffLogin(env, await readBody(req)));
+      }
       if (url.pathname === '/api/pay/callback' && req.method === 'POST') {
         return payCallback(env, await req.text());
       }
@@ -63,6 +67,18 @@ export default {
       }
       if (p === '/api/bar/staff' && req.method === 'GET') {
         return withCors(req, await barStaff(env, ctx));
+      }
+      if (p === '/api/bar/staff/add' && req.method === 'POST') {
+        return withCors(req, await addStaff(env, ctx, ctx.body));
+      }
+      if (p === '/api/bar/staff/update' && req.method === 'POST') {
+        return withCors(req, await updateStaff(env, ctx, ctx.body));
+      }
+      if (p === '/api/bar/staff/delete' && req.method === 'POST') {
+        return withCors(req, await deleteStaff(env, ctx, ctx.body));
+      }
+      if (p === '/api/bar/audit' && req.method === 'GET') {
+        return withCors(req, await auditLog(env, ctx, url.searchParams));
       }
       if (p === '/api/me' && req.method === 'GET') {
         return ok({
