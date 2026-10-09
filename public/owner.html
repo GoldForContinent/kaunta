@@ -459,6 +459,7 @@ function renderStocktake(d){
         '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="takeAdj(\''+x.id+'\',-1)">−</button>'+
         '<input type="number" step="0.25" value="'+c+'" onchange="takeSet(\''+x.id+'\',this.value)" style="width:72px;text-align:center;padding:8px;margin:0" title="count now on shelf (halves/quarters allowed)">'+
         '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="takeAdj(\''+x.id+'\',1)">+</button>'+
+        '<button class="btn small ghost" style="padding:7px 9px;color:var(--ember)" title="Delete this drink" onclick="delDrinkOwner(\''+x.id+'\')">✕</button>'+
       '</div>'+
       '<div class="mini" style="margin:6px 0 0">expected <b>'+kes(band.min)+'–'+kes(band.max)+'</b> · ledger '+kes(book)+flag+'</div></div></div>';
   }).join('');
@@ -492,6 +493,14 @@ function takeSet(id,v){
   TAKE_COUNTS[id]=n; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY);
 }
 function takeReset(){ TAKE_COUNTS={}; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY); }
+/* Delete a drink (owner). Same tombstone op the counter app uses, so it syncs everywhere. */
+function delDrinkOwner(id){
+  const x=(LAST_SUMMARY&&LAST_SUMMARY.drinks||[]).find(d=>d.id===id);
+  const nm=x?x.name:'this drink';
+  if(!confirm('Delete "'+nm+'" from the stock list?\n\nIts sales history stays in your reports, but the drink is removed from every device. This cannot be undone.')) return;
+  delete TAKE_COUNTS[id];
+  doOp([{type:'delete_drink',oid:oid(),drink:id,dname:nm,uid:PROFILE?PROFILE.id:'',by_name:PROFILE?PROFILE.name:''}], ()=>toastRes('Removed '+nm));
+}
 function renderShifts(d){
   const el=document.getElementById('shifts'); el.innerHTML='';
   const shifts=d.shifts||[];
@@ -573,6 +582,7 @@ function auditText(it){
     case 'restock': return 'Restocked '+drink+' +'+(p.qty||1)+' bottles';
     case 'set_open': return 'Opened '+drink+' at '+(p.open||0)+' bottles';
     case 'add_drink': return 'Added '+(p.name||'a drink');
+    case 'delete_drink': return 'Deleted '+(p.dname||p.name||drink);
     case 'set_price': return 'Changed the price of '+drink;
     case 'set_drink_split': return 'Updated the split for '+drink;
     case 'stocktake': return 'Stock-take · KES '+Math.round((p.totals&&p.totals.min)||0)+'–'+Math.round((p.totals&&p.totals.max)||0);

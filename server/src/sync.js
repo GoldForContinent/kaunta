@@ -26,7 +26,7 @@ export async function subOf(DB, barId) {
   return subState(row);
 }
 
-const TYPES = new Set(['sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'new_day', 'set_bar', 'restock', 'set_drink_split', 'set_shift', 'stocktake']);
+const TYPES = new Set(['sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'delete_drink', 'new_day', 'set_bar', 'restock', 'set_drink_split', 'set_shift', 'stocktake']);
 
 // Who did it? Ops carry the actor in different fields depending on type.
 function actorId(op) { return String(op.uid || op.by_user || '').slice(0, 64); }
@@ -105,6 +105,17 @@ export function applyStatements(barId, op, now, sizeOf) {
         Math.max(1, parseFloat(op.size) || 250),
         Math.max(0, Math.round(op.full || 0)), Math.max(0, Math.round(op.half || 0)), Math.max(0, Math.round(op.quarter || 0)),
         0);
+      break;
+    }
+    case 'delete_drink': {
+      // Tombstone via the append-only `changes` log: the row is removed, but the
+      // change survives so every device pulls and applies the deletion. Also drop
+      // this drink's restock history so it can't be re-counted if the id is reused.
+      const id = String(op.drink || op.id || '').slice(0, 64);
+      if (id) {
+        q('DELETE FROM drinks WHERE id = ? AND bar_id = ?', id, barId);
+        q('DELETE FROM restocks WHERE drink = ? AND bar_id = ?', id, barId);
+      }
       break;
     }
     case 'restock': {

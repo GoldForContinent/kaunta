@@ -849,6 +849,10 @@ function applyRemote(type,p){
       if(!DB.drinks.find(x=>x.id===p.id)) DB.drinks.push({id:p.id,name:p.name,size:p.size,full:p.full,half:p.half,quarter:p.quarter,open:0,soldMl:0,divisible:1,shot_ml:0,shot_price:0,stockMl:0});
       break;
     }
+    case 'delete_drink': {
+      removeDrinkLocal(String(p.drink||p.id||''));
+      break;
+    }
     case 'restock': {
       const d=DB.drinks.find(x=>x.id===p.drink);
       if(d){ const q=Math.max(1,Math.round(p.qty||1)); d.open+=q; d.stockMl=(d.stockMl===undefined?d.open*Ml(d):d.stockMl)+q*Ml(d); DB.restocks.push({drink:p.drink,qty:q,t:p.t||Date.now()}); }
@@ -1649,7 +1653,7 @@ function renderStock(){
     const splitTag = !d.divisible ? '<span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">whole only</span>'
       : d.shot_ml>0? `<span class="tag quarter">${d.shot_ml}ml shots</span>` : '<span class="tag half">divisible</span>';
     return `<div class="card">
-      <div class="row" style="border:none;padding:0 0 4px"><b style="font-size:15.5px">${d.name}</b>${splitTag}</div>
+      <div class="row" style="border:none;padding:0 0 4px"><b style="font-size:15.5px">${d.name}</b>${splitTag}<button class="btn small ghost" style="margin-left:auto;padding:6px 10px;color:var(--ember)" onclick="delDrink('${d.id}')">Delete</button></div>
       <div class="rowflex" style="margin-top:10px">
         <div><label class="lbl">Opening bottles</label>
           <div class="stepper">
@@ -1673,6 +1677,23 @@ function renderStock(){
       </div>
     </div>`;
   }).join('');
+}
+/* Removes a drink from local state — used by a local delete and by remote sync. */
+function removeDrinkLocal(id){
+  if(!id) return;
+  DB.drinks=(DB.drinks||[]).filter(d=>d.id!==id);
+  DB.restocks=(DB.restocks||[]).filter(r=>r.drink!==id);
+  delete TAKE[id];
+}
+/* Delete a drink: tombstone via the append-only change log so every device follows. */
+function delDrink(id){
+  const d=DB.drinks.find(x=>x.id===id);
+  if(!d) return;
+  if(!confirm('Delete "'+d.name+'" from the stock list?\n\nIts sales history stays in reports, but the drink is removed from every device. This cannot be undone.')) return;
+  const ct=curStaff();
+  removeDrinkLocal(id);
+  save(); enqueue('delete_drink',{drink:id,dname:d.name,uid:ct?ct.id:'',by_name:ct?ct.name:''});
+  toast(d.name+' deleted'); renderStock(); renderSell(); renderDash();
 }
 /* ---- stock-take: count the shelf, value the consumed stock, keep a record ---- */
 let TAKE={};
