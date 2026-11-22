@@ -471,36 +471,39 @@ body.nxt .overlay{padding-top:76px}
 <!-- auth gate -->
 <div id="gate" class="overlay hidden">
   <div class="ov-card">
-    <h2>Kaunta</h2>
-    <p class="sub">The bar ledger that never sleeps.<br>30-day free trial · then KES 500 / month.</p>
-    <div class="ctlbl" style="margin-bottom:8px">Are you signing in as a bartender or as the owner?</div>
-    <div class="seg" style="margin-bottom:14px" id="gatePath">
-      <div class="chip sel" data-p="staff">I work at a bar</div>
-      <div class="chip" data-p="owner">I own the bar</div>
-    </div>
-    <p class="mini" id="gateTip" style="margin:0 0 14px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04)"><b>Bartender?</b> Ask your owner for the bar's 6-digit code, then enter your phone number — your sales are kept under your name.</p>
+    <div class="mark"><svg class="ic"><use href="#i-count"/></svg></div>
+    <h2>Kaunta · Counter</h2>
+    <p class="sub">Sign in to your bar's counter. Ask your owner for the 6-digit join code.</p>
+
+    <!-- Staff / bartender: join code + phone -->
     <div id="staffJoin">
-      <label class="lbl">Join code</label>
-      <input id="lgCode" placeholder="6-digit code from the owner" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+      <label class="lbl">Join code (6 digits)</label>
+      <input id="lgCode" placeholder="123456" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
       <label class="lbl">Your phone number</label>
       <input id="lgPhone" type="tel" placeholder="07xx xxx xxx" inputmode="tel" autocomplete="tel">
       <div class="err" id="staffErr"></div>
-      <button class="btn primary" style="margin-top:2px" onclick="staffLogin()">Log in to my station</button>
+      <button class="btn primary" style="margin-top:2px" onclick="staffLogin()">Start shift</button>
       <p class="mini" style="text-align:center">Not on the roster yet? <a onclick="openStaffSignup(false,document.getElementById('lgCode').value.trim())" style="color:var(--gold);cursor:pointer">Create an account</a></p>
-      <p class="mini" style="text-align:center">Already have an account? <a onclick="staffShowLogin()" style="color:var(--gold);cursor:pointer">Log in with email</a></p>
     </div>
+
+    <div class="divider" style="margin:18px 0">or</div>
+
+    <!-- Owner: email + password -->
     <div id="loginBlock" class="hidden">
       <label class="lbl">Email</label>
       <input id="lgEmail" type="email" placeholder="you@bar.co.ke" autocomplete="email">
       <label class="lbl">Password</label>
       <div class="pw"><input id="lgPass" type="password" placeholder="••••••••" autocomplete="current-password"><button type="button" onclick="flipEye(this,'lgPass')">Show</button></div>
-      <button class="btn primary" style="margin-top:2px" onclick="doLogin()">Log in</button>
+      <button class="btn primary" style="margin-top:2px" onclick="doLogin()">Log in as owner</button>
       <div class="err" id="lgErr"></div>
-      <p class="mini" style="text-align:center"><a onclick="staffShowJoin()" style="color:var(--gold);cursor:pointer" class="staffOnly">← Use the join code instead</a></p>
+      <p class="mini" style="text-align:center"><a onclick="staffShowJoin()" style="color:var(--gold);cursor:pointer">← I'm a bartender — join with a code</a></p>
       <p class="mini" style="text-align:center">Forgot your password? A Kaunta systems admin can reset it from the admin console.</p>
-      <div class="divider">or</div>
+      <div class="divider" style="margin:14px 0">or</div>
       <button class="btn ghost" id="showSignup">Create a bar account</button>
     </div>
+
+    <p class="mini" id="ownerSwitch" style="text-align:center;cursor:pointer;color:var(--gold);margin-top:12px">I own the bar — sign in with email instead</p>
+
     <a class="backaway" href="index.html">&larr; Back to the website</a>
   </div>
 </div>
@@ -955,17 +958,7 @@ function show(id){
   document.body.classList.toggle('lock', any);
 }
 function initGate(){
-  document.querySelectorAll('#gatePath .chip').forEach(c=>c.onclick=()=>{
-    document.querySelectorAll('#gatePath .chip').forEach(x=>x.classList.toggle('sel',x===c));
-    const staff=c.dataset.p==='staff';
-    document.getElementById('gateTip').innerHTML = staff
-      ? '<b>Bartender?</b> Tap the join code below — ask your owner for the 6-digit code. Your sales are kept under your name.'
-      : '<b>Owner?</b> Log in with the one account you use everywhere — the counter app on this phone and the owner dashboard share the same sign-in. Share the 6-digit <b>join code</b> (Settings → Join code) with your bartenders.';
-    document.querySelectorAll('.staffOnly').forEach(x=>x.style.display=staff?'':'none');
-    setGatePanel(staff);
-    const codeWrap=document.getElementById('suCodeWrap');
-    if(codeWrap){ document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel', x.dataset.m===c.dataset.p)); codeWrap.classList.toggle('hidden', !staff); }
-  });
+  document.getElementById('ownerSwitch').onclick=()=>{ staffShowLogin(); };
   document.getElementById('showSignup').onclick=()=>openStaffSignup(true);
   const ss2=document.getElementById('showSignup2'); if(ss2) ss2.onclick=()=>openStaffSignup(false);
   document.getElementById('backLogin').onclick=()=>show('gate');
@@ -976,18 +969,19 @@ function initGate(){
     document.getElementById('suName').placeholder=c.dataset.m==='staff'?'Your name — how the boss knows you':'e.g. Mama Pima Gardens';
     if(c.dataset.m==='owner'&&DB.bar){ document.getElementById('suName').value=DB.bar; }
   });
-  setGatePanel(true);
 }
-let gateStaff=true, staffLoginShown=false;
-function setGatePanel(staff){
-  gateStaff=staff;
-  if(!staff) staffLoginShown=true;             // owners always see login
-  else staffLoginShown=false;                   // staff start at join code
-  document.getElementById('staffJoin').classList.toggle('hidden', !gateStaff||staffLoginShown);
-  document.getElementById('loginBlock').classList.toggle('hidden', gateStaff&&!staffLoginShown);
+function staffShowLogin(){
+  document.getElementById('staffJoin').classList.add('hidden');
+  document.getElementById('loginBlock').classList.remove('hidden');
+  document.getElementById('ownerSwitch').classList.add('hidden');
+  document.getElementById('lgEmail').focus();
 }
-function staffShowLogin(){ staffLoginShown=true; setGatePanel(true); document.getElementById('lgEmail').focus(); }
-function staffShowJoin(){ staffLoginShown=false; setGatePanel(true); document.getElementById('lgCode').focus(); }
+function staffShowJoin(){
+  document.getElementById('staffJoin').classList.remove('hidden');
+  document.getElementById('loginBlock').classList.add('hidden');
+  document.getElementById('ownerSwitch').classList.remove('hidden');
+  document.getElementById('lgCode').focus();
+}
 function staffJoin(){
   const e=document.getElementById('staffErr'); e.style.display='none';
   const code=document.getElementById('lgCode').value.trim();
@@ -2027,6 +2021,7 @@ function openSettings(){
     <div class="ctlbl" style="margin-top:4px">Account</div>
     <div class="subrow"><span>Email</span><b id="accEmail">${PROFILE?PROFILE.email:'—'}</b></div>
     <div class="subrow"><span>Join code</span><b id="accCode">${window._barJoin||'—'}</b></div>
+    ${PROFILE&&PROFILE.role==='owner'?'<button class="btn small ghost" onclick="regenCode()" style="margin-top:6px;color:var(--gold)">Regenerate join code</button>':''}
     <div class="subrow"><span>Role</span><b>${PROFILE?PROFILE.role:'—'}</b></div>
     ${PROFILE&&PROFILE.role==='owner'?'<a class="btn ghost" href="owner.html" style="margin-top:8px;display:block;text-align:center;text-decoration:none">Open the owner dashboard</a>':''}
     <button class="btn ghost" onclick="logout()" style="margin-top:8px;color:var(--ember)">Log out of this phone</button>
@@ -2048,6 +2043,14 @@ function openSettings(){
     if(r.ok&&r.data.bar){ window._barJoin=r.data.bar.join_code; const c=document.getElementById('accCode'); if(c) c.textContent=r.data.bar.join_code; }
   }
   loadCode();
+}
+async function regenCode(){
+  if(!PROFILE||PROFILE.role!=='owner') return toast('Owner only');
+  const r=await api('/api/bar/join-code/regenerate',{},'POST');
+  if(!r.ok) return toast(r.data.error||'Could not regenerate code');
+  window._barJoin=r.data.join_code;
+  const c=document.getElementById('accCode'); if(c) c.textContent=r.data.join_code;
+  toast('Join code regenerated — old code no longer works');
 }
 function saveServer(){
   const v=document.getElementById('setApi').value.trim().replace(/\/+$/,'');

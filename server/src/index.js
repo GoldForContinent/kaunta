@@ -1,7 +1,7 @@
 // Kaunta API — Cloudflare Worker router.
 
 import { json, corsHeaders } from './util.js';
-import { register, login, logout, requireAuth, changePassword, adminResetPassword, barStaff, staffLogin, addStaff, updateStaff, deleteStaff } from './auth.js';
+import { register, login, logout, requireAuth, changePassword, adminResetPassword, barStaff, staffLogin, addStaff, updateStaff, deleteStaff, regenerateJoinCode } from './auth.js';
 import { syncHandler, opHandler } from './sync.js';
 import { summaryHandler } from './summary.js';
 import { auditLog } from './audit.js';
@@ -76,6 +76,9 @@ export default {
       }
       if (p === '/api/bar/staff/delete' && req.method === 'POST') {
         return withCors(req, await deleteStaff(env, ctx, ctx.body));
+      }
+      if (p === '/api/bar/join-code/regenerate' && req.method === 'POST') {
+        return withCors(req, await regenerateJoinCode(env, ctx));
       }
       if (p === '/api/bar/audit' && req.method === 'GET') {
         return withCors(req, await auditLog(env, ctx, url.searchParams));

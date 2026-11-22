@@ -95,24 +95,49 @@ function normPhone(p) {
 }
 
 // POS login: owner-assigned phone number + the bar's join code. No email needed.
+// Failed attempts are counted per bar; after 5 failures the bar's staff login is
+// locked for 15 minutes so a third party can't brute-force the join code.
 export async function staffLogin({ DB }, body) {
   const phone = normPhone(body.phone);
   const code = (body.code || '').toString().trim();
   if (phone.length < 7) return json({ error: 'Enter the phone number your owner added' }, 400);
   if (!/^\d{6}$/.test(code)) return json({ error: 'The join code is 6 digits — ask your owner' }, 400);
 
-  const bar = await DB.prepare('SELECT id, name, slug, join_code FROM bars WHERE join_code = ?').bind(code).first();
+  const bar = await DB.prepare('SELECT id, name, slug, join_code, staff_failed_attempts, staff_locked_until FROM bars WHERE join_code = ?').bind(code).first();
   if (!bar) return json({ error: 'That bar code is not valid' }, 404);
 
+  const now = Date.now();
+  if (bar.staff_locked_until && now < bar.staff_locked_until) {
+    const mins = Math.ceil((bar.staff_locked_until - now) / 60000);
+    return json({ error: `Too many failed attempts — staff login locked for ${mins} more minutes.` }, 429);
+  }
+
   const user = await DB.prepare('SELECT * FROM users WHERE bar_id = ? AND phone = ? ORDER BY created_at LIMIT 1').bind(bar.id, phone).first();
-  if (!user) return json({ error: 'No staff with that number at this bar — ask the owner to add you' }, 404);
+  if (!user) {
+    const attempts = (bar.staff_failed_attempts || 0) + 1;
+    let lockedUntil = null;
+    if (attempts >= 5) lockedUntil = now + 15 * 60 * 1000;
+    await DB.prepare('UPDATE bars SET staff_failed_attempts = ?, staff_locked_until = ? WHERE id = ?').bind(attempts, lockedUntil, bar.id).run();
+    const extra = lockedUntil ? ` Staff login locked for 15 minutes.` : ` (${attempts}/5 failed attempts)`;
+    return json({ error: 'No staff with that number at this bar — ask the owner to add you.' + extra }, 404);
+  }
+
+  await DB.prepare('UPDATE bars SET staff_failed_attempts = 0, staff_locked_until = NULL WHERE id = ?').bind(bar.id).run();
 
   const t = token();
-  const now = Date.now();
   await DB.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?,?,?,?)')
     .bind(await hashToken(t), user.id, now + 90 * TRIAL, now)
     .run();
   return json({ ok: true, token: t, user: pubUser(user), bar_name: bar.name });
+}
+
+// Owner: regenerate the bar's 6-digit join code. Invalidates the old code so any
+// device still using it must re-join with the new one. Use if the code leaked.
+export async function regenerateJoinCode({ DB }, ctx) {
+  if (!ctx.user || ctx.user.role !== 'owner') return json({ error: 'Owner only' }, 403);
+  const newCode = genJoinCode();
+  await DB.prepare('UPDATE bars SET join_code = ? WHERE id = ?').bind(newCode, ctx.bar.id).run();
+  return json({ ok: true, join_code: newCode });
 }
 
 // Owner adds an employee (name + phone). They can then log in from the counter.
