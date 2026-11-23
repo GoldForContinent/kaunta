@@ -640,6 +640,9 @@ body.nxt .overlay{padding-top:76px}
       <h2>Record Sale</h2>
       <p class="sub">Pick a drink, split it, tap add — load as many different drinks as the table wants, then charge the whole round once.</p>
 
+      <div class="ctlbl" style="margin-top:4px">Find a drink</div>
+      <input id="drinkSearch" type="search" placeholder="Search drinks…" inputmode="text" autocapitalize="words" autocomplete="off">
+
       <div class="drinks" id="drinkList"></div>
 
       <div class="ctlbl">Portion size</div>
@@ -1245,10 +1248,13 @@ function go(v){
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click', ()=>go(b.dataset.view)));
 
 /* =============== SELL ============ */
-const S = {drink:'kc', size:'full', qty:1, pay:'cash', who:''};
+const S = {drink:'kc', size:'full', qty:1, pay:'cash', who:'', search:''};
 function renderSell(){
   const el=document.getElementById('drinkList'); el.innerHTML='';
-  DB.drinks.forEach(d=>{
+  const q=(S.search||'').toLowerCase();
+  const drinks=DB.drinks.filter(d=>!q||d.name.toLowerCase().includes(q));
+  if(!drinks.length){ el.innerHTML='<div class="empty">No drinks match.</div>'; return; }
+  drinks.forEach(d=>{
     const total=(roundLeft(d)||0)+d.soldMl, left=Math.max(0,Math.round(roundLeft(d))||0);
     const pct=Math.max(8,Math.min(100, total>0?left/total*100:0));
     const cls = left<=0?'warn':(total>0&&left/total<0.25?'full':'');
@@ -1295,6 +1301,7 @@ function updChips(){
 }
 document.querySelectorAll('#sizeChips .chip').forEach(c=>c.onclick=()=>{S.size=c.dataset.size;updChips();});
 document.querySelectorAll('#payRow .chip').forEach(c=>c.onclick=()=>{S.pay=c.dataset.pay;updChips();});
+document.getElementById('drinkSearch').addEventListener('input',e=>{S.search=e.target.value.trim(); renderSell(); updChips();});
 function qtyStep(n){
   S.qty=Math.min(10,Math.max(1,S.qty+n));
   document.getElementById('qtyVal').textContent=S.qty;
