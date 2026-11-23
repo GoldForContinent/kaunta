@@ -189,24 +189,18 @@ main{padding:18px 16px 30px;position:relative;z-index:2}
 .tag.quarter{background:rgba(120,160,220,.12);color:#93b7e6}
 
 /* ============ drink cards (sell) ============ */
-.drinks{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
-.drink{
-  display:flex;align-items:center;gap:13px;padding:13px 14px;border-radius:16px;cursor:pointer;
-  background:var(--card);border:1px solid var(--line);transition:transform .12s,border-color .15s,background .15s;
-}
-.drink:active{transform:scale(.985)}
+.drinks{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.drink{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:14px 12px;border-radius:16px;cursor:pointer;background:var(--card);border:1px solid var(--line);transition:transform .12s,border-color .15s,background .15s;min-height:150px}
+.drink:active{transform:scale(.97)}
 .drink.sel{border-color:rgba(233,185,92,.55);background:linear-gradient(180deg,rgba(233,185,92,.10),rgba(233,185,92,.03));box-shadow:0 0 0 1px rgba(233,185,92,.2),0 8px 22px rgba(0,0,0,.25)}
-.bot{position:relative;width:22px;height:36px;flex:none;border-radius:5px 5px 7px 7px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);overflow:hidden}
-.bot::before{content:'';position:absolute;left:5px;top:-5px;width:12px;height:7px;border:1px solid rgba(255,255,255,.14);border-bottom:none;border-radius:5px 5px 0 0;background:rgba(255,255,255,.04)}
-.bot i{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#ffd98a,#c98a2e);transition:height .5s cubic-bezier(.22,1,.3,1)}
-.bot i.full{background:linear-gradient(180deg,#86e3a0,#3fae5a)}
-.bot i.warn{background:linear-gradient(180deg,#ff9a7a,#e2451f)}
-.drink .info{flex:1;min-width:0}
-.drink .info b{display:block;font-size:14.5px;font-weight:600}
-.drink .info span{font-size:11px;color:var(--dim)}
-.drink .pr{text-align:right;flex:none}
-.drink .pr .fig{font-family:var(--serif);font-weight:800;font-size:16px;color:var(--paper)}
-.drink .pr small{display:block;font-size:9px;color:var(--dim);letter-spacing:1.2px;text-transform:uppercase;margin-top:2px;font-weight:700}
+.drink .bot{width:34px;height:52px;flex:none}
+.drink .info{flex:none;width:100%}
+.drink .info b{display:block;font-size:15px;font-weight:600}
+.drink .info span{font-size:10px;color:var(--dim)}
+.drink .pr{margin-top:auto;width:100%}
+.drink .pr .fig{font-family:var(--serif);font-weight:800;font-size:17px;color:var(--paper)}
+.drink .pr small{display:block;font-size:8.5px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-top:2px;font-weight:700}
+.drink .qk{margin-top:auto;font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.5px}
 
 /* ============ segmented (size / pay) ============ */
 .ctlbl{font-size:9.5px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:16px 0 8px;display:flex;align-items:center;gap:8px}
@@ -749,11 +743,11 @@ const FRACT = {full:1, half:0.5, quarter:0.25};
 const FR_LBL = {full:'Full', half:'Half', quarter:'Quarter', shot:'Shot'};
 const PL = {cash:'Cash', mpesa:'M-Pesa', deni:'Debt'};
 const DEF_DRINKS = [
-  {id:'kc', name:'Kenya Cane', size:250, full:350, half:175, quarter:90, open:10, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:2500},
-  {id:'kg', name:'Kibao Gin', size:250, full:250, half:130, quarter:70, open:8, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:2000},
-  {id:'sm', name:'Senator Keg', size:500, full:180, half:95, quarter:50, open:20, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:10000},
-  {id:'tb', name:'Tusker Lager', size:500, full:250, half:0, quarter:0, open:15, soldMl:0, divisible:0, shot_ml:0, shot_price:0, stockMl:7500},
-  {id:'gt', name:'Gilbeys', size:750, full:950, half:500, quarter:260, open:4, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:3000},
+  {id:'kc', name:'Kenya Cane', size:250, full:350, half:175, quarter:90, open:10, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:2500, quick:1},
+  {id:'kg', name:'Kibao Gin', size:250, full:250, half:130, quarter:70, open:8, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:2000, quick:1},
+  {id:'sm', name:'Senator Keg', size:500, full:180, half:95, quarter:50, open:20, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:10000, quick:1},
+  {id:'tb', name:'Tusker Lager', size:500, full:250, half:0, quarter:0, open:15, soldMl:0, divisible:0, shot_ml:0, shot_price:0, stockMl:7500, quick:1},
+  {id:'gt', name:'Gilbeys', size:750, full:950, half:500, quarter:260, open:4, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:3000, quick:1},
 ];
 const KEY='kaunta2', OLD_KEY='kengele2';
 let DB = {};
@@ -774,6 +768,7 @@ function normDB(){
     if(d.shot_ml===undefined) d.shot_ml=0;
     if(d.shot_price===undefined) d.shot_price=0;
     if(d.stockMl===undefined) d.stockMl=(d.open||0)*Ml(d);
+    if(d.quick===undefined) d.quick=0;
   });
   (DB.sales||[]).forEach(s=>{ if(!s.uid) s.uid=''; if(!s.staff) s.staff=''; if(!s.round) s.round=''; });
 }
@@ -1249,10 +1244,16 @@ document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click', 
 
 /* =============== SELL ============ */
 const S = {drink:'kc', size:'full', qty:1, pay:'cash', who:'', search:''};
+function fuzzyMatch(name,q){
+  if(!q) return true;
+  const words=q.split(/\s+/).filter(Boolean);
+  const n=name.toLowerCase();
+  return words.every(w=>n.split(/\s+/).some(wd=>wd.startsWith(w))||n.includes(w));
+}
 function renderSell(){
   const el=document.getElementById('drinkList'); el.innerHTML='';
   const q=(S.search||'').toLowerCase();
-  const drinks=DB.drinks.filter(d=>!q||d.name.toLowerCase().includes(q));
+  const drinks=[...DB.drinks].sort((a,b)=>(b.quick||0)-(a.quick||0)||a.name.localeCompare(b.name)).filter(d=>fuzzyMatch(d.name,q));
   if(!drinks.length){ el.innerHTML='<div class="empty">No drinks match.</div>'; return; }
   drinks.forEach(d=>{
     const total=(roundLeft(d)||0)+d.soldMl, left=Math.max(0,Math.round(roundLeft(d))||0);
@@ -1262,7 +1263,7 @@ function renderSell(){
     div.className='drink'+(S.drink===d.id?' sel':'');
     div.innerHTML=`
       <div class="bot"><i style="height:${pct}%" class="${cls}"></i></div>
-      <div class="info"><b>${d.name}</b><span>${d.size} ml · ${(left/Ml(d)).toFixed(1)} left</span></div>
+      <div class="info"><b>${esc(d.name)}</b><span>${d.size} ml · ${(left/Ml(d)).toFixed(1)} left</span>${d.quick?'<div class="qk">★ Quick add</div>':''}</div>
       <div class="pr"><div class="fig">${kes(d.full)}</div><small>full</small></div>`;
     div.onclick=()=>{S.drink=d.id; renderSell(); updChips();};
     el.appendChild(div);
