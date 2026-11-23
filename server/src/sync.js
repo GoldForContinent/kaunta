@@ -26,7 +26,7 @@ export async function subOf(DB, barId) {
   return subState(row);
 }
 
-const TYPES = new Set(['sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'delete_drink', 'new_day', 'set_bar', 'restock', 'set_drink_split', 'set_shift', 'stocktake']);
+const TYPES = new Set(['sale', 'return_sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'delete_drink', 'new_day', 'set_bar', 'restock', 'set_drink_split', 'set_shift', 'stocktake']);
 
 // Who did it? Ops carry the actor in different fields depending on type.
 function actorId(op) { return String(op.uid || op.by_user || '').slice(0, 64); }
@@ -68,6 +68,24 @@ export function applyStatements(barId, op, now, sizeOf) {
       else if (info && FRACT[op.size] != null) unit = (info.size || 0) * FRACT[op.size];
       const pour = Math.round(unit * n);
       if (pour > 0) q('UPDATE drinks SET soldMl = soldMl + ?, stockMl = MAX(0, stockMl - ?) WHERE id = ? AND bar_id = ?', pour, pour, String(op.drink), barId);
+      break;
+    }
+    case 'return_sale': {
+      // Customer returns drinks: reverse stock and record a negative sale entry.
+      const n = Math.max(1, Math.round(op.qty || 1));
+      const price = Math.max(0, Math.round(op.price || 0));
+      q('INSERT INTO sales (bar_id, t, drink, size, qty, price, pay, who, note, uid, staff, round) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+        barId, Math.round(op.t || now), String(op.drink || '?'), String(op.size || ''), n, -price, String(op.pay || 'cash'), String(op.who || ''), 'Return',
+        String(op.uid || '').slice(0, 64), String(op.staff || '').slice(0, 60), String(op.round || '').slice(0, 64));
+      if (op.pay === 'deni' && who) {
+        q('UPDATE debts SET amount = MAX(0, amount - ?) WHERE bar_id = ? AND name = ?', price, barId, who);
+      }
+      const info = sizeOf(op.drink);
+      let unit = 0;
+      if (op.size === 'shot') unit = info ? info.shot_ml || 0 : 0;
+      else if (info && FRACT[op.size] != null) unit = (info.size || 0) * FRACT[op.size];
+      const pour = Math.round(unit * n);
+      if (pour > 0) q('UPDATE drinks SET soldMl = MAX(0, soldMl - ?), stockMl = stockMl + ? WHERE id = ? AND bar_id = ?', pour, pour, String(op.drink), barId);
       break;
     }
     case 'add_debt': {
@@ -165,7 +183,7 @@ export function applyStatements(barId, op, now, sizeOf) {
 async function buildSizeOf(DB, barId, ops) {
   const need = new Set();
   for (const o of ops) {
-    if ((o.type === 'sale' || o.type === 'restock' || o.type === 'set_open') && o.drink) need.add(String(o.drink));
+    if ((o.type === 'sale' || o.type === 'return_sale' || o.type === 'restock' || o.type === 'set_open') && o.drink) need.add(String(o.drink));
     if (o.type === 'stocktake' && o.counts) Object.keys(o.counts).forEach((id) => need.add(String(id)));
     if (o.type === 'add_drink' && o.id) need.add(String(o.id));
     if (o.type === 'set_drink_split') need.add(String(o.id || o.drink || ''));

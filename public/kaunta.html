@@ -834,6 +834,16 @@ function applyRemote(type,p){
       }
       break;
     }
+    case 'return_sale': {
+      DB.sales.push({t:p.t,drink:p.drink,size:p.size,qty:p.qty,price:-Math.abs(p.price||0),pay:p.pay,who:p.who||'',uid:p.uid||'',staff:p.staff||'',round:p.round||'',isReturn:true});
+      if(p.pay==='deni'&&p.who){ DB.debts[p.who]=Math.max(0,(DB.debts[p.who]||0)-Math.abs(p.price||0)); }
+      const d=DB.drinks.find(x=>x.id===p.drink);
+      if(d){
+        const pm=pourMl(d,p.size,p.qty);
+        if(pm){ d.soldMl=Math.max(0,d.soldMl-pm); d.stockMl=(d.stockMl===undefined?d.open*Ml(d):d.stockMl)+pm; }
+      }
+      break;
+    }
     case 'add_debt': {
       DB.debts[p.who]=Math.max(1,(DB.debts[p.who]||0)+p.amount); addReg(p.who);
       DB.sales.push({t:p.t||Date.now(),drink:'_deni',size:'',qty:1,price:p.amount,pay:'deni',who:p.who,uid:p.uid||'',staff:p.staff||''});
@@ -1643,16 +1653,23 @@ function renderHist(){
       const d=DB.drinks.find(x=>x.id===s.drink);
       const tm=new Date(s.t);
       const tmm=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0');
-      return `<div class="row"><div class="l"><b>${d?d.name:'Loading…'} ${s.size?'<span class="tag '+s.size+'">'+FR_LBL[s.size]+'</span>':''}${s.qty>1?'  <span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">×'+s.qty+'</span>':''}${s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':''}</b>
+      return `<div class="row"><div class="l"><b>${d?d.name:'Loading…'} ${s.size?'<span class="tag '+s.size+'">'+FR_LBL[s.size]+'</span>':''}${s.qty>1?'  <span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">×'+s.qty+'</span>':''}${s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':''}${s.isReturn?' <span class="tag" style="background:rgba(255,92,56,.14);color:var(--ember)">RETURNED</span>':''}</b>
         <span>${tmm} · ${s.staff||s.who||'over counter'}</span></div>
-        <div class="r"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
-        <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span></div></div>`;
+        <div class="r" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
+        <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span>${!s.isReturn?'<button class="btn small ghost" style="margin-top:2px;padding:6px 10px;font-size:10.5px;background:rgba(255,92,56,.12);color:var(--ember);border:1px solid rgba(255,92,56,.3)" onclick="returnSale('+String(JSON.stringify({id:s.uid||s.t,drink:s.drink,size:s.size,qty:s.qty,price:s.price,pay:s.pay,who:s.who,staff:s.staff}).replace(/['\\]/g,'\\$&'))+')">Return</button>':''}</div></div>`;
     }).join('');
     html+='</div>';
   });
   el.innerHTML=html;
 }
-
+function returnSale(o){
+  const d=DB.drinks.find(x=>x.id===o.drink);
+  const nm=d?d.name:(o.drink||'Item');
+  if(!confirm('Return '+o.qty+' × '+nm+' ('+kes(o.price)+') for '+o.who+'?\nStock and money will be reversed.')) return;
+  const st=curStaff(); const t=Date.now();
+  enqueue('return_sale',{t,drink:o.drink,size:o.size,qty:o.qty,price:o.price,pay:o.pay,who:o.who||'',uid:o.id,staff:st.name,round:''});
+  save(); toast(nm+' returned — stock and money reversed'); renderHist(); renderDash();
+}
 /* =============== STOCK ============ */
 function Ml(d){ return parseFloat(d.size); }
 function pourMl(d,size,qty){ qty=Math.max(1,Math.round(qty||1)); return size==='shot'? Math.round((d.shot_ml||0)*qty) : Math.round(Ml(d)*FRACT[size]*qty); }
