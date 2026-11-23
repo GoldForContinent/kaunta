@@ -1263,25 +1263,28 @@ function fuzzyMatch(name,q){
   return words.every(w=>n.split(/\s+/).some(wd=>wd.startsWith(w))||n.includes(w));
 }
 function renderSell(){
-  const el=document.getElementById('drinkList'); el.innerHTML='';
-  const q=(S.search||'').toLowerCase();
-  const drinks=[...DB.drinks].sort((a,b)=>(b.quick||0)-(a.quick||0)||a.name.localeCompare(b.name)).filter(d=>fuzzyMatch(d.name,q));
-  if(!drinks.length){ el.innerHTML='<div class="empty">No drinks match.</div>'; return; }
-  drinks.forEach(d=>{
-    const total=(roundLeft(d)||0)+d.soldMl, left=Math.max(0,Math.round(roundLeft(d))||0);
-    const pct=Math.max(8,Math.min(100, total>0?left/total*100:0));
-    const cls = left<=0?'warn':(total>0&&left/total<0.25?'full':'');
-    const div=document.createElement('div');
-    div.className='drink'+(S.drink===d.id?' sel':'');
-    div.innerHTML=`
-      <div class="bot"><i style="height:${pct}%" class="${cls}"></i></div>
-      <div class="info"><b>${esc(d.name)}</b><span>${d.size} ml · ${(left/Ml(d)).toFixed(1)} left</span>${d.quick?'<div class="qk">★ Quick add</div>':''}${d.cups&&d.cups.length?'<div class="qk">🥤 Cups: '+d.cups.map(c=>c.label+'.'+kes(c.price)).join(', ')+'</div>':''}</div>
-      <div class="pr"><div class="fig">${kes(d.full)}</div><small>full</small></div>`;
-    div.onclick=()=>{S.drink=d.id; renderSell(); updChips();};
-    el.appendChild(div);
-  });
+  try{
+    const el=document.getElementById('drinkList'); el.innerHTML='';
+    const q=(S.search||'').toLowerCase();
+    const drinks=[...DB.drinks].sort((a,b)=>(b.quick||0)-(a.quick||0)||a.name.localeCompare(b.name)).filter(d=>fuzzyMatch(d.name,q));
+    if(!drinks.length){ el.innerHTML='<div class="empty">No drinks match.</div>'; return; }
+    drinks.forEach(d=>{
+      const total=(roundLeft(d)||0)+d.soldMl, left=Math.max(0,Math.round(roundLeft(d))||0);
+      const pct=Math.max(8,Math.min(100, total>0?left/total*100:0));
+      const cls = left<=0?'warn':(total>0&&left/total<0.25?'full':'');
+      const div=document.createElement('div');
+      div.className='drink'+(S.drink===d.id?' sel':'');
+      div.innerHTML=`
+        <div class="bot"><i style="height:${pct}%" class="${cls}"></i></div>
+        <div class="info"><b>${esc(d.name)}</b><span>${d.size} ml · ${(left/Ml(d)).toFixed(1)} left</span>${d.quick?'<div class="qk">★ Quick add</div>':''}${d.cups&&d.cups.length?'<div class="qk">🥤 Cups: '+d.cups.map(c=>c.label+'.'+kes(c.price)).join(', ')+'</div>':''}</div>
+        <div class="pr"><div class="fig">${kes(d.full)}</div><small>full</small></div>`;
+      div.onclick=()=>{S.drink=d.id; renderSell(); updChips();};
+      el.appendChild(div);
+    });
+  }catch(e){ console.error('renderSell error', e); }
 }
 function updChips(){
+  try{
   const d=DB.drinks.find(x=>x.id===S.drink)||{};
   const hasShot=d.shot_ml>0 && d.shot_price>0;
   const sizes=['full','half','quarter'];
@@ -1319,6 +1322,7 @@ function updChips(){
   if(S.pay==='deni') renderRegs();
   const amt=drinkPrice(d,S.size)*S.qty;
   document.getElementById('sellBtn').textContent = `＋ ADD TO ROUND · ${kes(amt)}`;
+  }catch(e){ console.error('updChips error', e); }
 }
 document.querySelectorAll('#sizeChips .chip').forEach(c=>c.onclick=()=>{S.size=c.dataset.size;updChips();});
 document.querySelectorAll('#payRow .chip').forEach(c=>c.onclick=()=>{S.pay=c.dataset.pay;updChips();});
@@ -1446,6 +1450,7 @@ function countUp(el,to,cur){
 }
 
 function renderDash(){
+  try{
   const t=todaySales();
   const cash=byPay(t,'cash'), mpesa=byPay(t,'mpesa'), deni=byPay(t,'deni');
   const sold=cash+mpesa;
@@ -1613,8 +1618,8 @@ function openCustomerPurchases(who){
       const tm=new Date(s.t);
       const lbl=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0')+' · '+todayStr(new Date(s.t));
       return `<div class="row" style="border:none;padding:6px 0"><div class="l"><b>${esc(nm)}</b><span>${FR_LBL[s.size]||s.size} × ${s.qty} · ${lbl}</span></div><div class="r"><b class="money">${kes(s.price)}</b></div></div>`;
-    }).join('');
-  }
+  }).join('');
+}catch(e){ console.error('renderDash error', e); }
   openSheet(`
     <h3 class="serif">Purchases — ${esc(who)}</h3>
     <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Everything ${esc(who)} bought on credit.</p>
@@ -1700,7 +1705,11 @@ function bottleMax(d){
   const byQ=(d.quarter||0)>0 ? 4*d.quarter : 0;
   const byS=(d.shot_ml>0&&d.shot_price>0)? Math.floor(Ml(d)/d.shot_ml)*d.shot_price :0;
   // Best cup price per ml * bottle size
-  const byC=d.cups&&d.cups.length? Math.round((Ml(d)/d.cups.reduce((a,c)=>c.price/c.ml>a.price/a.ml?c:a).ml)*d.cups.reduce((a,c)=>c.price/c.ml>a.price/a.ml?c:a).price) : 0;
+  let byC=0;
+  if(d.cups&&d.cups.length){
+    const best=d.cups.reduce((a,c)=>{ const ra=a.ml>0?a.price/a.ml:0; const rc=c.ml>0?c.price/c.ml:0; return rc>ra?c:a; }, {ml:0,price:0});
+    if(best.ml>0) byC=Math.round((Ml(d)/best.ml)*best.price);
+  }
   return Math.max(byQ,byS,byC,0) || 0;
 }
 /* expected revenue band for N(=fractional) bottles */
@@ -1773,8 +1782,10 @@ function setMlLeft(id){
   d.stockMl=ml;
   d.open=Math.round(ml/Ml(d)*100)/100;
   // Estimate money at cheapest cup price per ml
-  const cheapestCup=d.cups.reduce((a,c)=>a<c.price/c.ml?a:c.price/c.ml, Infinity);
-  const estMoney=Math.round(ml*cheapestCup);
+  let cheapest=Infinity;
+  d.cups.forEach(c=>{ if(c.ml>0){ const r=c.price/c.ml; if(r<cheapest) cheapest=r; } });
+  if(!isFinite(cheapest)) cheapest=0;
+  const estMoney=Math.round(ml*cheapest);
   document.getElementById('mlResult-'+id).innerHTML=`
     <div style="padding:6px 10px;background:rgba(233,185,92,.10);border:1px solid rgba(233,185,92,.25);border-radius:8px;margin-top:4px">
       <b>Ml left:</b> ${ml}ml (~${d.open} bottles)<br>
