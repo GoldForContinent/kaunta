@@ -1866,34 +1866,51 @@ function doRestock(id){
 }
 function openSplit(id){
   const d=DB.drinks.find(x=>x.id===id);
+  const mode = d.shot_ml>0 && d.shot_price>0 ? (d.divisible?'both':'shots') : (d.divisible?'div':'full');
   openSheet(`
-    <h3 class="serif">Split options · ${esc(d.name)}</h3>
-    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Is this bottle sold in subdivisions or shots? This sets the top of the expected-money range per bottle.</p>
-    <div class="ctlbl" style="margin-top:0">Can be divided?</div>
-    <div class="seg" id="divSeg">
-      <div class="chip sel" data-v="1">Yes · split</div>
-      <div class="chip" data-v="0">No · whole only</div>
+    <h3 class="serif">Selling options · ${esc(d.name)}</h3>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">How is this bottle sold? This sets the expected-money range per bottle.</p>
+    <div class="seg" id="splitMode">
+      <div class="chip" data-m="full">Full bottle only</div>
+      <div class="chip" data-m="div">Divided (full / half / quarter)</div>
+      <div class="chip" data-m="shots">Shots only</div>
+      <div class="chip" data-m="both">Full bottle + shots</div>
     </div>
-    <div class="ctlbl">Shot glass size (ml)</div>
-    <input id="spShotMl" type="number" value="${d.shot_ml||''}" placeholder="e.g. 30 or 50 — leave 0 to turn off">
-    <div class="ctlbl">Price per shot (KES)</div>
-    <input id="spShotPr" type="number" value="${d.shot_price||''}" placeholder="0 = no shots sold">
-    <p class="mini" style="margin-top:0">Example: a ${d.size} ml bottle at ${d.shot_ml>0?d.shot_ml:'30'} ml per shot = up to <b>${d.shot_ml>0?Math.floor(d.size/d.shot_ml)*d.shot_price:'—'}</b> KES per bottle if all shots.</p>
-    <button class="btn primary" onclick="saveSplit('${id}')">Save split options</button>
+
+    <div id="spDivWrap" class="${mode!=='div'&&mode!=='both'?'hidden':''}">
+      <div class="ctlbl">Half price (KES)</div><input id="spHalf" type="number" value="${d.half||0}" placeholder="e.g. 175">
+      <div class="ctlbl">Quarter price (KES)</div><input id="spQ" type="number" value="${d.quarter||0}" placeholder="e.g. 90">
+    </div>
+
+    <div id="spShotWrap" class="${mode!=='shots'&&mode!=='both'?'hidden':''}">
+      <div class="ctlbl">Shot glass size (ml)</div><input id="spShotMl" type="number" value="${d.shot_ml||0}" placeholder="e.g. 30 or 50">
+      <div class="ctlbl">Price per shot (KES)</div><input id="spShotPr" type="number" value="${d.shot_price||0}" placeholder="e.g. 50">
+      <p class="mini" style="margin-top:0">A ${d.size} ml bottle at ${d.shot_ml||0} ml per shot = up to <b>${d.shot_ml>0?Math.floor(d.size/d.shot_ml)*d.shot_price:'—'}</b> KES per bottle if all shots.</p>
+    </div>
+
+    <button class="btn primary" onclick="saveSplit('${id}')">Save selling options</button>
   `);
-  document.querySelectorAll('#divSeg .chip').forEach(c=>c.onclick=()=>{
-    document.querySelectorAll('#divSeg .chip').forEach(x=>x.classList.toggle('sel',x===c));
+  document.querySelectorAll('#splitMode .chip').forEach(c=>{
+    c.onclick=()=>{
+      document.querySelectorAll('#splitMode .chip').forEach(x=>x.classList.remove('sel'));
+      c.classList.add('sel');
+      const m=c.dataset.m;
+      document.getElementById('spDivWrap').classList.toggle('hidden', m!=='div' && m!=='both');
+      document.getElementById('spShotWrap').classList.toggle('hidden', m!=='shots' && m!=='both');
+    };
   });
-  document.querySelectorAll('#divSeg .chip').forEach(c=>c.classList.toggle('sel', c.dataset.v===''+(d.divisible?1:0)));
+  document.getElementById('splitMode').querySelector(`[data-m="${mode}"]`).classList.add('sel');
 }
 function saveSplit(id){
   const d=DB.drinks.find(x=>x.id===id); if(!d) return;
-  const div=document.querySelector('#divSeg .chip.sel').dataset.v==='1'?1:0;
-  const ml=Math.max(0,parseFloat(document.getElementById('spShotMl').value)||0);
-  const pr=Math.max(0,Math.round(parseFloat(document.getElementById('spShotPr').value)||0));
-  d.divisible=div; d.shot_ml=ml; d.shot_price=pr;
-  save(); enqueue('set_drink_split',{drink:id,divisible:div,shot_ml:ml,shot_price:pr});
-  closeSheet(); toast('Split options saved'); renderStock(); renderDash();
+  const mode=document.querySelector('#splitMode .chip.sel').dataset.m;
+  d.half=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spHalf').value)||0)):0;
+  d.quarter=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spQ').value)||0)):0;
+  d.shot_ml=(mode==='shots'||mode==='both')?Math.max(0,parseFloat(document.getElementById('spShotMl').value)||0):0;
+  d.shot_price=(mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spShotPr').value)||0)):0;
+  d.divisible=(mode==='div'||mode==='both')?1:0;
+  save(); enqueue('set_drink_split',{drink:id,divisible:d.divisible,shot_ml:d.shot_ml,shot_price:d.shot_price}); enqueue('set_price',{drink:id,k:'half',v:d.half}); enqueue('set_price',{drink:id,k:'quarter',v:d.quarter}); enqueue('set_price',{drink:id,k:'shot_price',v:d.shot_price});
+  closeSheet(); toast('Selling options saved'); renderStock(); renderDash();
 }
 /* ---- shift ---- */
 function openShift(){ return [...DB.shifts].reverse().find(s=>s && !s.close_at); }
@@ -2021,25 +2038,61 @@ function openAddDrink(){
     <h3 class="serif">Add Drink</h3>
     <label class="lbl">Name</label><input id="ndName" placeholder="e.g. Power Cane">
     <label class="lbl">Bottle size (ml)</label><input id="ndSize" type="number" value="250" placeholder="250">
-    <label class="lbl">Bei · Full / Half / Quarter</label>
-    <div class="rowflex">
-      <input id="ndFull" type="number" placeholder="Full">
-      <input id="ndHalf" type="number" placeholder="Half">
-      <input id="ndQ" type="number" placeholder="Quarter">
+    <label class="lbl">Price · Full bottle (KES)</label><input id="ndFull" type="number" placeholder="e.g. 350">
+
+    <label class="lbl">How is it sold?</label>
+    <div class="seg" id="sellMode">
+      <div class="chip sel" data-m="full">Full bottle only</div>
+      <div class="chip" data-m="div">Divided (full / half / quarter)</div>
+      <div class="chip" data-m="shots">Shots only</div>
+      <div class="chip" data-m="both">Full bottle + shots</div>
     </div>
-    <button class="btn primary" onclick="addDrink()">Add</button>
+
+    <div id="ndDivWrap" class="hidden">
+      <div class="ctlbl">Divided prices (KES)</div>
+      <div class="rowflex" style="margin-bottom:6px">
+        <input id="ndHalf" type="number" placeholder="Half">
+        <input id="ndQ" type="number" placeholder="Quarter">
+      </div>
+    </div>
+
+    <div id="ndShotWrap" class="hidden">
+      <div class="ctlbl">Shot calibration</div>
+      <div class="rowflex" style="margin-bottom:6px">
+        <input id="ndShotMl" type="number" placeholder="Shot size (ml)">
+        <input id="ndShotPr" type="number" placeholder="Price per shot">
+      </div>
+      <p class="mini" style="margin-top:0">Shots earn more per bottle than selling whole.</p>
+    </div>
+
+    <button class="btn primary" onclick="addDrink()">Add drink</button>
   `);
+  document.querySelectorAll('#sellMode .chip').forEach(c=>{
+    c.onclick=()=>{
+      document.querySelectorAll('#sellMode .chip').forEach(x=>x.classList.remove('sel'));
+      c.classList.add('sel');
+      const m=c.dataset.m;
+      document.getElementById('ndDivWrap').classList.toggle('hidden', m!=='div' && m!=='both');
+      document.getElementById('ndShotWrap').classList.toggle('hidden', m!=='shots' && m!=='both');
+    };
+  });
 }
 function addDrink(){
   const n=document.getElementById('ndName').value.trim();
   if(!n) return toast('A name is needed');
   const id='d'+Date.now();
-  const dd={id, name:n, size:Math.max(50,parseFloat(document.getElementById('ndSize').value)||250),
-    full:+document.getElementById('ndFull').value||0, half:+document.getElementById('ndHalf').value||0, quarter:+document.getElementById('ndQ').value||0,
-    open:0, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:0};
+  const mode=document.querySelector('#sellMode .chip.sel').dataset.m;
+  const size=Math.max(50,parseFloat(document.getElementById('ndSize').value)||250);
+  const full=Math.max(0,Math.round(parseFloat(document.getElementById('ndFull').value)||0));
+  const half=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('ndHalf').value)||0)):0;
+  const quarter=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('ndQ').value)||0)):0;
+  const shotMl=(mode==='shots'||mode==='both')?Math.max(0,parseFloat(document.getElementById('ndShotMl').value)||0):0;
+  const shotPrice=(mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('ndShotPr').value)||0)):0;
+  const divisible=(mode==='div'||mode==='both')?1:0;
+  const dd={id,name:n,size,full,half,quarter,open:0,soldMl:0,divisible,shot_ml:shotMl,shot_price:shotPrice,stockMl:0};
   DB.drinks.push(dd);
-  save(); enqueue('add_drink',{id,name:n,size:dd.size,full:dd.full,half:dd.half,quarter:dd.quarter,divisible:1,shot_ml:0,shot_price:0});
-  closeSheet(); toast(n+' added to the list'); renderStock(); renderSell();
+  save(); enqueue('add_drink',{id,name:n,size,full,half,quarter,divisible,shot_ml:shotMl,shot_price:shotPrice});
+  closeSheet(); toast(n+' added'); renderStock(); renderSell();
 }
 function newDay(){
   if(!confirm('Start a new day?\nSales stay in history, today\'s sold-report resets (what is still on the shelf carries over to tomorrow), and any open shift is handed over.')) return;
