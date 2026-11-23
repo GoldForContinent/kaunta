@@ -1667,7 +1667,12 @@ function returnSale(o){
   const nm=d?d.name:(o.drink||'Item');
   if(!confirm('Return '+o.qty+' × '+nm+' ('+kes(o.price)+') for '+o.who+'?\nStock and money will be reversed.')) return;
   const st=curStaff(); const t=Date.now();
-  enqueue('return_sale',{t,drink:o.drink,size:o.size,qty:o.qty,price:o.price,pay:o.pay,who:o.who||'',uid:o.id,staff:st.name,round:''});
+  const price=Math.abs(o.price||0);
+  const pm=d?pourMl(d,o.size,o.qty):0;
+  if(d){ d.soldMl=Math.max(0,d.soldMl-pm); d.stockMl=(d.stockMl===undefined?d.open*Ml(d):d.stockMl)+pm; }
+  if(o.pay==='deni'&&o.who){ DB.debts[o.who]=Math.max(0,(DB.debts[o.who]||0)-price); }
+  DB.sales.push({t,drink:o.drink,size:o.size,qty:o.qty,price:-price,pay:o.pay,who:o.who||'',uid:o.id,staff:st.name,round:'',isReturn:true});
+  enqueue('return_sale',{t,drink:o.drink,size:o.size,qty:o.qty,price:price,pay:o.pay,who:o.who||'',uid:o.id,staff:st.name,round:''});
   save(); toast(nm+' returned — stock and money reversed'); renderHist(); renderDash();
 }
 /* =============== STOCK ============ */
