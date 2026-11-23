@@ -1530,7 +1530,7 @@ function renderDeni(){
     </div>
     <div style="display:flex;gap:8px;margin-top:13px">
       <button class="btn small" style="flex:1;background:rgba(63,174,90,.14);color:var(--mpesa)" onclick="openPay(${i})">Pay</button>
-      <button class="btn small" style="flex:1;background:rgba(233,185,92,.14);color:#211407" onclick="openCustomerPurchases(${JSON.stringify(who)})">Purchases</button>
+      <button class="btn small" style="flex:1;background:rgba(233,185,92,.14);color:#211407" onclick="openCustomerPurchases('${String(who).replace(/['\\]/g, '\\$&')}')">Purchases</button>
       <button class="btn small" style="flex:1;background:rgba(255,255,255,.05);color:var(--dim);border:1px solid var(--line2)" onclick="clearDeni(${i})">Clear debt</button>
     </div></div>`;
   }).join('') : `<div class="empty"><div class="mark">${IC('shield')}</div>No debts today. The books are clean.<br>Clean business feels good!</div>`;
