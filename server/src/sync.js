@@ -118,11 +118,11 @@ export function applyStatements(barId, op, now, sizeOf) {
       break;
     }
     case 'add_drink': {
-      q('INSERT OR IGNORE INTO drinks (id, bar_id, name, size, full, half, quarter, open, soldMl, divisible, shot_ml, shot_price) VALUES (?,?,?,?,?,?,?,?,0,1,0,0)',
+      q('INSERT OR IGNORE INTO drinks (id, bar_id, name, size, full, half, quarter, open, soldMl, divisible, shot_ml, shot_price, cups) VALUES (?,?,?,?,?,?,?,?,0,1,0,0,?)',
         String(op.id || 'd' + now).slice(0, 64), barId, String(op.name || 'Drink').slice(0, 60),
         Math.max(1, parseFloat(op.size) || 250),
         Math.max(0, Math.round(op.full || 0)), Math.max(0, Math.round(op.half || 0)), Math.max(0, Math.round(op.quarter || 0)),
-        0);
+        String(op.cups !== undefined ? JSON.stringify(op.cups) : '[]'));
       break;
     }
     case 'delete_drink': {
