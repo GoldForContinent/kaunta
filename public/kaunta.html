@@ -1565,7 +1565,7 @@ function renderDash(){
       <div class="r"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
       <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span></div></div>`;
   }).join('');
-}
+}catch(e){ console.error('renderDash error', e); }
 
 function copyReport(){
   const t=todaySales(), cash=byPay(t,'cash'), mpesa=byPay(t,'mpesa'), deni=byPay(t,'deni'), sold=cash+mpesa;
