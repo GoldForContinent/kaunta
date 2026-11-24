@@ -802,7 +802,10 @@ const api=async(path, body, method)=>{
   const headers={'Content-Type':'application/json'};
   if(TOKEN) headers['Authorization']='Bearer '+TOKEN;
   try{
-    const r=await fetch(API_BASE+path,{method:method||(body?'POST':'GET'),headers,body:body?JSON.stringify(body):undefined});
+    const ac=new AbortController();
+    const tmo=setTimeout(()=>ac.abort(),10000);
+    const r=await fetch(API_BASE+path,{method:method||(body?'POST':'GET'),headers,body:body?JSON.stringify(body):undefined,signal:ac.signal});
+    clearTimeout(tmo);
     let d={}; try{ d=await r.json(); }catch(e){}
     return {ok:r.ok, res:r, data:d};
   }catch(e){ return {ok:false, data:{error:'net'}}; }
@@ -1080,7 +1083,9 @@ async function afterAuth(reconnect){
         migrated=true; storeCloud();
       }
     }
-    for(let i=0;i<60;i++){
+    const deadline=Date.now()+20000; // 20s max
+    for(let i=0;i<20;i++){
+      if(Date.now()>deadline) break;
       const s=await sync();
       if(!s) break;
       if((s.changes||[]).length<500) break;
@@ -1216,9 +1221,18 @@ function boot(){
     if(os&&os.user_id) activeStaff={id:os.user_id, name:os.user_name||os.user_id};
     initGate();
     const hasAcc=(localStorage.getItem(K_TOKEN)||'').length>0;
-    if(hasAcc){ afterAuth(false); }
-    else { show('gate'); }
-    setInterval(tick,30000); tick(); go('dash'); viewDone.dash=true;
+    // Always render something visible immediately — never block on async.
+    if(hasAcc){
+      document.getElementById('gate').classList.add('hidden');
+      document.body.classList.remove('lock');
+      go('dash'); viewDone.dash=true;
+      tick();
+      // Async auth in background — never blocks the UI.
+      afterAuth(false).catch(e=>{ console.error('afterAuth bg error', e); });
+    } else {
+      show('gate');
+    }
+    setInterval(tick,30000);
     loadAnnounce();
   }catch(e){
     console.error('boot error', e);
