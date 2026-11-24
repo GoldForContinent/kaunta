@@ -1643,7 +1643,6 @@ function openCustomerPurchases(who){
       const lbl=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0')+' · '+todayStr(new Date(s.t));
       return `<div class="row" style="border:none;padding:6px 0"><div class="l"><b>${esc(nm)}</b><span>${FR_LBL[s.size]||s.size} × ${s.qty} · ${lbl}</span></div><div class="r"><b class="money">${kes(s.price)}</b></div></div>`;
   }).join('');
-}catch(e){ console.error('renderDash error', e); }
   openSheet(`
     <h3 class="serif">Purchases — ${esc(who)}</h3>
     <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Everything ${esc(who)} bought on credit.</p>
