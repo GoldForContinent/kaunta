@@ -2417,7 +2417,9 @@ document.getElementById('barName').innerHTML = DB.bar+'<small>Bar Ledger</small>
 /* splash + boot */
 window.onerror=function(msg,url,line,col,err){ console.error('UNCAUGHT',msg,url,line,col,err&&err.stack); try{ show('gate'); }catch(e){} return true; };
 window.addEventListener('unhandledrejection',e=>{ console.error('UNHANDLED REJECTION',e.reason); try{ show('gate'); }catch(e2){} });
-setTimeout(()=>{ const s=document.getElementById('splash'); s.style.opacity='0'; setTimeout(()=>s.remove(),500); },1200);
+function dismissSplash(){ const s=document.getElementById('splash'); if(s){ s.style.opacity='0'; setTimeout(()=>s.remove(),300); } }
+const s=document.getElementById('splash'); if(s){ s.addEventListener('click',dismissSplash); s.addEventListener('touchstart',dismissSplash); }
+setTimeout(dismissSplash,800);
 boot();
 
 /* =============== PWA: service worker + install ============ */
