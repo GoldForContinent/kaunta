@@ -968,17 +968,20 @@ function show(id){
   document.body.classList.toggle('lock', any);
 }
 function initGate(){
-  document.getElementById('ownerSwitch').onclick=()=>{ staffShowLogin(); };
-  document.getElementById('showSignup').onclick=()=>openStaffSignup(true);
-  const ss2=document.getElementById('showSignup2'); if(ss2) ss2.onclick=()=>openStaffSignup(false);
-  document.getElementById('backLogin').onclick=()=>show('gate');
-  document.querySelectorAll('#suMode .chip').forEach(c=>c.onclick=()=>{
-    document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel',x===c));
-    document.getElementById('suCodeWrap').classList.toggle('hidden', c.dataset.m!=='staff');
-    document.getElementById('suNameLbl').textContent=c.dataset.m==='staff'?'Your name':'Bar / business name';
-    document.getElementById('suName').placeholder=c.dataset.m==='staff'?'Your name — how the boss knows you':'e.g. Mama Pima Gardens';
-    if(c.dataset.m==='owner'&&DB.bar){ document.getElementById('suName').value=DB.bar; }
-  });
+  try{
+    const os=document.getElementById('ownerSwitch'); if(os) os.onclick=()=>{ staffShowLogin(); };
+    const ss=document.getElementById('showSignup'); if(ss) ss.onclick=()=>openStaffSignup(true);
+    const ss2=document.getElementById('showSignup2'); if(ss2) ss2.onclick=()=>openStaffSignup(false);
+    const bl=document.getElementById('backLogin'); if(bl) bl.onclick=()=>show('gate');
+    document.querySelectorAll('#suMode .chip').forEach(c=>{
+      c.onclick=()=>{
+        document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel',x===c));
+        const wrap=document.getElementById('suCodeWrap'); if(wrap) wrap.classList.toggle('hidden', c.dataset.m!=='staff');
+        const lbl=document.getElementById('suNameLbl'); if(lbl) lbl.textContent=c.dataset.m==='staff'?'Your name':'Bar / business name';
+        const ph=document.getElementById('suName'); if(ph){ ph.placeholder=c.dataset.m==='staff'?'Your name — how the boss knows you':'e.g. Mama Pima Gardens'; if(c.dataset.m==='owner'&&DB.bar) ph.value=DB.bar; }
+      };
+    });
+  }catch(e){ console.error('initGate error', e); }
 }
 function staffShowLogin(){
   document.getElementById('staffJoin').classList.add('hidden');
@@ -1052,40 +1055,42 @@ function goNext(){
   toast('The owner dashboard is for bar owners — this is the counter app');
 }
 async function afterAuth(reconnect){
-  if(!window._nwWired){ window._nwWired=true; autoReconnect(); }
-  updateNw();
-  const r=await api('/api/me','','GET');
-  if(r.ok){ PROFILE=r.data.user; }
-  if(PROFILE){
-    document.getElementById('gate').classList.add('hidden');
-    document.getElementById('signup').classList.add('hidden');
-    document.body.classList.remove('lock');
-  }
-  const barName=(r.ok&&r.data.bar&&r.data.bar.name)||DB.bar||'My Bar';
-  if(!migrated && DB && DB.drinks){
-    const isOwner=PROFILE&&PROFILE.role==='owner';
-    if(isOwner){
-      // First connect for this bar: push the local ledger to the cloud.
-      if(DB.seeded){
-        DB={bar:barName, drinks:DEF_DRINKS.map(d=>({...d})), sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false};
-        save();
-        document.getElementById('barName').innerHTML=barName+'<small>Bar Ledger</small>';
-      }
-      await migrateToCloud();
-    }else{
-      // Staff joining a bar: never push local demo data — pull the bar's state.
-      if(DB.seeded){ DB={bar:barName, drinks:[], sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false}; save(); }
-      migrated=true; storeCloud();
+  try{
+    if(!window._nwWired){ window._nwWired=true; autoReconnect(); }
+    updateNw();
+    const r=await api('/api/me','','GET');
+    if(r.ok){ PROFILE=r.data.user; }
+    if(PROFILE){
+      document.getElementById('gate').classList.add('hidden');
+      document.getElementById('signup').classList.add('hidden');
+      document.body.classList.remove('lock');
     }
+    const barName=(r.ok&&r.data.bar&&r.data.bar.name)||DB.bar||'My Bar';
+    if(!migrated && DB && DB.drinks){
+      const isOwner=PROFILE&&PROFILE.role==='owner';
+      if(isOwner){
+        if(DB.seeded){
+          DB={bar:barName, drinks:DEF_DRINKS.map(d=>({...d})), sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false};
+          save();
+          document.getElementById('barName').innerHTML=barName+'<small>Bar Ledger</small>';
+        }
+        await migrateToCloud();
+      }else{
+        if(DB.seeded){ DB={bar:barName, drinks:[], sales:[], debts:{}, regs:{}, open:Date.now(), seeded:false}; save(); }
+        migrated=true; storeCloud();
+      }
+    }
+    for(let i=0;i<60;i++){
+      const s=await sync();
+      if(!s) break;
+      if((s.changes||[]).length<500) break;
+    }
+    renderDash(); tickSub();
+    goNext();
+  }catch(e){
+    console.error('afterAuth error', e);
+    try{ show('gate'); }catch(e2){}
   }
-  // Catch up chunk by chunk until the cloud has nothing new for us.
-  for(let i=0;i<60;i++){
-    const s=await sync();
-    if(!s) break;
-    if((s.changes||[]).length<500) break;
-  }
-  renderDash(); tickSub();
-  goNext();
 }
 async function migrateToCloud(){
   const ops=[];
@@ -1206,14 +1211,19 @@ function payHide(){ show('back'); }
 
 /* ---- boot ---- */
 function boot(){
-  const os=openShift();
-  if(os&&os.user_id) activeStaff={id:os.user_id, name:os.user_name||os.user_id};
-  initGate();
-  const hasAcc=(localStorage.getItem(K_TOKEN)||'').length>0;
-  if(hasAcc){ afterAuth(false); }
-  else { show('gate'); }
-  setInterval(tick,30000); tick(); go('dash'); viewDone.dash=true;
-  loadAnnounce();
+  try{
+    const os=openShift();
+    if(os&&os.user_id) activeStaff={id:os.user_id, name:os.user_name||os.user_id};
+    initGate();
+    const hasAcc=(localStorage.getItem(K_TOKEN)||'').length>0;
+    if(hasAcc){ afterAuth(false); }
+    else { show('gate'); }
+    setInterval(tick,30000); tick(); go('dash'); viewDone.dash=true;
+    loadAnnounce();
+  }catch(e){
+    console.error('boot error', e);
+    try{ show('gate'); }catch(e2){}
+  }
 }
 
 /* =============== SEED DEMO =============== */
@@ -2405,6 +2415,8 @@ window.addEventListener('offline',()=>tick());
 document.getElementById('barName').innerHTML = DB.bar+'<small>Bar Ledger</small>';
 
 /* splash + boot */
+window.onerror=function(msg,url,line,col,err){ console.error('UNCAUGHT',msg,url,line,col,err&&err.stack); try{ show('gate'); }catch(e){} return true; };
+window.addEventListener('unhandledrejection',e=>{ console.error('UNHANDLED REJECTION',e.reason); try{ show('gate'); }catch(e2){} });
 setTimeout(()=>{ const s=document.getElementById('splash'); s.style.opacity='0'; setTimeout(()=>s.remove(),500); },1200);
 boot();
 
