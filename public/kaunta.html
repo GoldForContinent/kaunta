@@ -2393,34 +2393,34 @@ function chime(){
 const IC = n=>'<svg class="ic"><use href="#i-'+n+'"/></svg>';
 
 function tick(){
-  const now=new Date();
-  const stNow=window._K_LAST_SUMMARY&&window._K_LAST_SUMMARY.server_time||Date.now();
-  const s0=openShift();
-  const elapsed=Math.max(0,stNow-(s0?s0.open_at:DB.open));
-  const h=Math.floor(elapsed/3600000), m=Math.floor((elapsed%3600000)/60000);
-  document.getElementById('shiftTime').textContent=(h>0?h+'h ':'')+m+'m';
-  const shd=document.getElementById('shDur');
-  if(shd&&s0){ const sm=Math.max(0,Math.round((stNow-s0.open_at)/60000)); shd.textContent=Math.floor(sm/60)+'h '+sm%60+'m'; }
-  const shP=document.getElementById('shiftPill'); if(shP){ if(s0&&s0.user_name){ shP.textContent=' · '+s0.user_name; shP.classList.remove('hidden'); } else { shP.classList.add('hidden'); } }
-  const hh=now.getHours();
-  const g=(hh<12?'Good morning':hh<17?'Good afternoon':'Good evening');
-  document.getElementById('greet').innerHTML=g+', <span class="em">Boss.</span>';
-  document.getElementById('dashDate').textContent=now.toDateString()+' · '+now.toLocaleDateString('en-KE',{weekday:'long'})+' · live books';
-  document.getElementById('modePill').innerHTML = navigator.onLine ? '<span style="color:var(--gold)">●</span> Online · auto-sync' : '<span style="color:var(--dim)">●</span> Offline · recording locally';
-  if(viewDone.dash) renderDash();
+  try{
+    const now=new Date();
+    const stNow=window._K_LAST_SUMMARY&&window._K_LAST_SUMMARY.server_time||Date.now();
+    const s0=openShift();
+    const elapsed=Math.max(0,stNow-(s0?s0.open_at:DB.open));
+    const h=Math.floor(elapsed/3600000), m=Math.floor((elapsed%3600000)/60000);
+    const shT=document.getElementById('shiftTime'); if(shT) shT.textContent=(h>0?h+'h ':'')+m+'m';
+    const shd=document.getElementById('shDur');
+    if(shd&&s0){ const sm=Math.max(0,Math.round((stNow-s0.open_at)/60000)); shd.textContent=Math.floor(sm/60)+'h '+sm%60+'m'; }
+    const shP=document.getElementById('shiftPill'); if(shP){ if(s0&&s0.user_name){ shP.textContent=' · '+s0.user_name; shP.classList.remove('hidden'); } else { shP.classList.add('hidden'); } }
+    const hh=now.getHours();
+    const g=(hh<12?'Good morning':hh<17?'Good afternoon':'Good evening');
+    const greetEl=document.getElementById('greet'); if(greetEl) greetEl.innerHTML=g+', <span class="em">Boss.</span>';
+    const dateEl=document.getElementById('dashDate'); if(dateEl) dateEl.textContent=now.toDateString()+' · '+now.toLocaleDateString('en-KE',{weekday:'long'})+' · live books';
+    const modePill=document.getElementById('modePill'); if(modePill) modePill.innerHTML = navigator.onLine ? '<span style="color:var(--gold)">●</span> Online · auto-sync' : '<span style="color:var(--dim)">●</span> Offline · recording locally';
+    if(viewDone.dash) renderDash();
+  }catch(e){ console.error('tick error', e); }
 }
 const viewDone={dash:false};
 window.addEventListener('online',()=>tick());
 window.addEventListener('offline',()=>tick());
 document.getElementById('barName').innerHTML = DB.bar+'<small>Bar Ledger</small>';
 
-/* splash + boot */
+/* splash + boot — immediate render, no fade animation */
 window.onerror=function(msg,url,line,col,err){ console.error('UNCAUGHT',msg,url,line,col,err&&err.stack); try{ show('gate'); }catch(e){} return true; };
 window.addEventListener('unhandledrejection',e=>{ console.error('UNHANDLED REJECTION',e.reason); try{ show('gate'); }catch(e2){} });
-function dismissSplash(){ const s=document.getElementById('splash'); if(s){ s.style.opacity='0'; setTimeout(()=>s.remove(),300); } }
-const s=document.getElementById('splash'); if(s){ s.addEventListener('click',dismissSplash); s.addEventListener('touchstart',dismissSplash); }
-setTimeout(dismissSplash,800);
-boot();
+const s=document.getElementById('splash'); if(s){ s.style.display='none'; }
+setTimeout(function(){ try{ boot(); }catch(e){ console.error('boot exception',e); try{ show('gate'); }catch(e2){} } },0);
 
 /* =============== PWA: service worker + install ============ */
 let deferredPrompt=null;
