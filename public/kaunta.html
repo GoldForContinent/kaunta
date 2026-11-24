@@ -1566,6 +1566,7 @@ function renderDash(){
       <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span></div></div>`;
   }).join('');
 }catch(e){ console.error('renderDash error', e); }
+}
 
 function copyReport(){
   const t=todaySales(), cash=byPay(t,'cash'), mpesa=byPay(t,'mpesa'), deni=byPay(t,'deni'), sold=cash+mpesa;
@@ -1650,6 +1651,7 @@ function openCustomerPurchases(who){
     ${rows}
     <div style="margin-top:12px"><button class="btn ghost" onclick="closeSheet()">Close</button></div>
   `);
+}
 }
 function openAddDeni(){
   openSheet(`
@@ -1812,10 +1814,9 @@ function setMlLeft(id){
   document.getElementById('mlResult-'+id).innerHTML=`
     <div style="padding:6px 10px;background:rgba(233,185,92,.10);border:1px solid rgba(233,185,92,.25);border-radius:8px;margin-top:4px">
       <b>Ml left:</b> ${ml}ml (~${d.open} bottles)<br>
-      <b>Estimated value:</b> <span class="money red">${kes(estMoney)}</span> (at ${kes(Math.round(cheapestCup*100))/100}/ml cheapest cup)
+      <b>Estimated value:</b> <span class="money red">${kes(estMoney)}</span> (at ${kes(Math.round(cheapest*100))/100}/ml cheapest cup)
     </div>`;
   save(); renderStock(); renderDash();
-}
 }
 /* ---- stock-take: count the shelf, value the consumed stock, keep a record ---- */
 let TAKE={};
