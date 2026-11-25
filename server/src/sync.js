@@ -68,24 +68,24 @@ function kegUnitsOf(info, op) {
   return op && op.keg !== undefined ? !!op.keg : isKeg(info);
 }
 
-// ---- expected-money band (mirrors the client's drinkBand/bottleMax) ----
-function serverBottleMax(d) {
-  if (!(+d.divisible)) return 0;
-  const byQ = (+d.quarter || 0) > 0 ? 4 * (+d.quarter || 0) : 0;
-  const byS = ((+d.shot_ml || 0) > 0 && (+d.shot_price || 0) > 0) ? Math.floor((+d.size || 0) / (+d.shot_ml || 1)) * (+d.shot_price || 0) : 0;
-  return Math.max(byQ, byS, 0) || 0;
+// ---- expected-money band (mirrors the client's drinkBand/bottleRates) ----
+function serverBottleRates(d) {
+  const rates = [Math.max(0, +d.full || 0)];
+  if (+d.divisible) {
+    if (+d.half > 0) rates.push(2 * (+d.half));
+    if (+d.quarter > 0) rates.push(4 * (+d.quarter));
+    if ((+d.shot_ml || 0) > 0 && (+d.shot_price || 0) > 0) rates.push(Math.max(0, Math.floor((+d.size || 0) / (+d.shot_ml || 1)) * (+d.shot_price || 0)));
+  }
+  return rates.filter(r => r > 0);
 }
+function serverBottleMax(d) { const r = serverBottleRates(d); return r.length ? Math.max(...r) : 0; }
 function serverBand(d, units) {
   const n = Math.max(0, Number(units) || 0);
-  if (isKeg(d)) {
-    const rates = cupRates(d);
-    const min = Math.round(n * (rates.length ? Math.min(...rates) : 0));
-    const max = Math.round(n * (rates.length ? Math.max(...rates) : 0));
-    return { min, max: Math.max(min, max) };
-  }
-  const min = Math.round(n * (+d.full || 0));
-  const mx = serverBottleMax(d) > 0 ? Math.round(n * serverBottleMax(d)) : min;
-  return { min, max: Math.max(min, mx) };
+  const rates = isKeg(d) ? cupRates(d) : serverBottleRates(d);
+  if (!rates.length) return { min: 0, max: 0 };
+  const min = Math.round(n * Math.min(...rates));
+  const max = Math.round(n * Math.max(...rates));
+  return { min, max: Math.max(min, max) };
 }
 
 // Builds D1 statements that apply one op to the state tables (change-log row handled by caller).

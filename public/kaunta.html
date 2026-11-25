@@ -1025,6 +1025,7 @@ async function sync(){
   if(!navigator.onLine){ scheduleSync(); return false; }
   syncing=true;
   try{
+    normDB(); // replay can push restock/waste/shift rows into these arrays
     const res=await api('/api/sync',{last_seq:lastSeq, ops:outbox});
     const d=res.data;
     if(!res.ok){
@@ -1204,6 +1205,9 @@ async function afterAuth(reconnect){
         migrated=true; storeCloud();
       }
     }
+    // A fresh cloud DB is created without the audit arrays; restore them before
+    // any change replay or render touches them.
+    normDB(); save();
     const deadline=Date.now()+20000; // 20s max
     for(let i=0;i<20;i++){
       if(Date.now()>deadline) break;
@@ -1935,28 +1939,28 @@ function sizeLabel(d,size){
   if(size&&size.startsWith('cup')){ const cup=cupsOf(d)[parseInt(size.slice(3))]; if(cup) return cup.label; }
   return FR_LBL[size]||size||'';
 }
-/* most a single ordinary bottle can earn if fully subdivided (quarters or shots) */
-function bottleMax(d){
-  if(!d.divisible) return 0;
-  const byQ=(d.quarter||0)>0 ? 4*d.quarter : 0;
-  const byS=(d.shot_ml>0&&d.shot_price>0)? Math.floor(Ml(d)/d.shot_ml)*d.shot_price :0;
-  return Math.max(byQ,byS,0) || 0;
+/* Every plausible price for one ordinary bottle: whole, halves, quarters, shots. */
+function bottleRates(d){
+  const rates=[Math.max(0,+d.full||0)];
+  if(d.divisible){
+    if(+d.half>0) rates.push(2*(+d.half));
+    if(+d.quarter>0) rates.push(4*(+d.quarter));
+    if(+d.shot_ml>0&&+d.shot_price>0) rates.push(Math.max(0,Math.floor(Ml(d)/(+d.shot_ml))*(+d.shot_price)));
+  }
+  return rates.filter(r=>r>0);
 }
+function bottleMax(d){ const r=bottleRates(d); return r.length?Math.max(...r):0; }
 /* Expected revenue band. Bottles are fractional counts; kegs are ml sold by cup-rate. */
 function drinkBand(d, units){
   const n=Math.max(0,Number(units)||0);
-  if(isKeg(d)){
-    const rates=cupRates(d);
-    const min=Math.round(n*(rates.length?Math.min(...rates):0));
-    const max=Math.round(n*(rates.length?Math.max(...rates):0));
-    return {min, max:Math.max(min,max)};
-  }
-  const min=Math.round(n*(d.full||0));
-  const mx=bottleMax(d)>0? Math.round(n*bottleMax(d)) : min;
-  return {min, max:Math.max(min,mx)};
+  const rates=isKeg(d)?cupRates(d):bottleRates(d);
+  if(!rates.length) return {min:0,max:0};
+  const min=Math.round(n*Math.min(...rates));
+  const max=Math.round(n*Math.max(...rates));
+  return {min, max:Math.max(min,max)};
 }
 function renderStock(){
-  const todayRest=d=>DB.restocks.filter(r=>r.drink===d.id && todayStr(new Date(r.t))===todayStr()).reduce((a,r)=>a+Number(r.qty||0),0);
+  const todayRest=d=>(DB.restocks||[]).filter(r=>r.drink===d.id && todayStr(new Date(r.t))===todayStr()).reduce((a,r)=>a+Number(r.qty||0),0);
   document.getElementById('stockList').innerHTML = DB.drinks.map(d=>{
     const keg=isKeg(d);
     const total=roundLeft(d)+d.soldMl, left=Math.max(0,Math.round(roundLeft(d))||0);
@@ -1964,6 +1968,7 @@ function renderStock(){
     const b=Math.max(1,Math.round(Number(d.barrelMl)||50000));
     const active=keg?Math.max(0,Math.round((Number(d.stockMl)||0)-(Number(d.barrels)||0)*b)):left;
     const band=drinkBand(d,keg?sold:sold/Ml(d));
+    const stockBand=drinkBand(d,keg?left:left/Ml(d));
     const rest=todayRest(d);
     const typeTag=keg? '<span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">keg · ml</span>'
       : !d.divisible ? '<span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">whole only</span>'
@@ -2019,7 +2024,11 @@ function renderStock(){
       <div class="row" style="border:none;padding:0 0 4px"><b style="font-size:15.5px">${esc(d.name)}</b>${typeTag}${cupTag}<button class="btn small ghost" style="margin-left:auto;padding:6px 10px;color:var(--ember)" onclick="delDrink('${d.id}')">Delete</button></div>
       <div class="${keg?'keg-controls':'rowflex'}" style="margin-top:10px">${stockControl}</div>
       <div class="mini">${shelfLine} ${d.soldMl>total?'<span style="color:var(--ember)">· OVER!</span>':''}</div>
-      <div class="mini" style="margin-top:6px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px">Expected from sold stock: <b class="money" style="font-style:normal;font-size:12px">KES ${band.min} – ${band.max}</b><span style="color:var(--dim)"> · ${keg?'cup prices per ml included':'divisions & shots included'}</span></div>
+      <div class="mini" style="margin-top:6px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px">
+        <div>Expected from sold stock: <b class="money" style="font-style:normal;font-size:12px">KES ${band.min} – ${band.max}</b></div>
+        <div style="margin-top:3px">Stock value if sold: <b class="money" style="font-style:normal;font-size:12px">KES ${stockBand.min} – ${stockBand.max}</b></div>
+        <div style="color:var(--dim);margin-top:2px">${keg?'cup prices per ml · all ml on hand':'full / half / quarter / shots · all bottles on shelf'}</div>
+      </div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn small ghost" style="flex:1" onclick="addToTake('${d.id}')">+ Count ${keg?'barrel':'shelf'}</button>
         <button class="btn small ghost" style="flex:1" onclick="openRestock('${d.id}')">+ Received ${keg?'ml':'stock'}</button>
@@ -2133,19 +2142,19 @@ function doTapBarrel(id){
 /* ---- stock-take: count the shelf, value the consumed stock, keep a record ---- */
 let TAKE={};
 // Consumption window: since the previous take, or since the start of today (first take).
-const takeSince=()=>{ const l=DB.stocktakes[0]; if(l) return l.t; const x=new Date(); x.setHours(0,0,0,0); return x.getTime(); };
+const takeSince=()=>{ const l=(DB.stocktakes||[])[0]; if(l) return l.t; const x=new Date(); x.setHours(0,0,0,0); return x.getTime(); };
 function takeBase(id){
   const since=takeSince();
   let base=0;
-  const lastTake=DB.stocktakes[0]||null;
+  const lastTake=(DB.stocktakes||[])[0]||null;
   if(lastTake){ try{ base=Number((lastTake.counts||{})[id])||0; }catch(e){ base=0; } }
   else { const d=DB.drinks.find(x=>x.id===id); base=Math.max(0,Math.round(d?d.open:0)); }
-  const restC=DB.restocks.filter(r=>r.drink===id && r.t>since).reduce((a,r)=>a+Math.round(r.qty||0),0);
+  const restC=(DB.restocks||[]).filter(r=>r.drink===id && r.t>since).reduce((a,r)=>a+Math.round(r.qty||0),0);
   const wasteC=(DB.waste||[]).filter(w=>w.drink===id && w.t>since).reduce((a,w)=>a+Math.round(w.qty||0),0);
   return {base, restC:restC-wasteC, since};
 }
 function openTake(focusId){
-  const lastTake=DB.stocktakes[0]||null;
+  const lastTake=(DB.stocktakes||[])[0]||null;
   TAKE={};
   DB.drinks.forEach(d=>{ TAKE[d.id]=isKeg(d)?Math.max(0,Math.round(roundLeft(d)||0)):Math.max(0,Math.round((roundLeft(d)||0)/Ml(d)*100)/100); });
   const rows=DB.drinks.map(d=>{

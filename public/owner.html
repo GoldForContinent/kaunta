@@ -265,24 +265,24 @@ const dstr=ms=>new Date(ms).toLocaleDateString('en-KE',{day:'numeric',month:'sho
 const cupList=d=>{ try{ const v=typeof d.cups==='string'?JSON.parse(d.cups||'[]'):d.cups; return Array.isArray(v)?v:[]; }catch(e){ return []; } };
 const isKeg=d=>!!d && !!( +d.keg || (!d.keg && cupList(d).length) );
 const cupRates=d=>cupList(d).map(c=>c&&+c.ml>0&&+c.price>0?(+c.price)/(+c.ml):0).filter(r=>r>0);
-/* expected-money band: min = whole price / cheapest cup, max = best division / dearest cup */
-function bottleMax(d){
-  if(isKeg(d)||!(+d.divisible)) return 0;
-  const byQ=(+d.quarter||0)>0 ? 4*(+d.quarter||0) : 0;
-  const byS=((+d.shot_ml||0)>0)&&((+d.shot_price||0)>0)? Math.floor((+d.size||0)/(+d.shot_ml||1))*(+d.shot_price||0) :0;
-  return Math.max(byQ,byS,0)||0;
+/* expected-money band: cheapest / dearest plausible price per bottle or ml */
+function bottleRates(d){
+  const rates=[Math.max(0,+d.full||0)];
+  if(+d.divisible){
+    if(+d.half>0) rates.push(2*(+d.half));
+    if(+d.quarter>0) rates.push(4*(+d.quarter));
+    if((+d.shot_ml||0)>0&&(+d.shot_price||0)>0) rates.push(Math.max(0,Math.floor((+d.size||0)/(+d.shot_ml||1))*(+d.shot_price||0)));
+  }
+  return rates.filter(r=>r>0);
 }
+function bottleMax(d){ const r=bottleRates(d); return r.length?Math.max(...r):0; }
 function drinkBand(d,units){
   const n=Math.max(0,Number(units)||0);
-  if(isKeg(d)){
-    const rates=cupRates(d);
-    const min=Math.round(n*(rates.length?Math.min(...rates):0));
-    const max=Math.round(n*(rates.length?Math.max(...rates):0));
-    return {min, max:Math.max(min,max)};
-  }
-  const min=Math.round(n*(+d.full||0));
-  const mx=bottleMax(d)>0? Math.round(n*bottleMax(d)) : min;
-  return {min, max:Math.max(min,mx)};
+  const rates=isKeg(d)?cupRates(d):bottleRates(d);
+  if(!rates.length) return {min:0,max:0};
+  const min=Math.round(n*Math.min(...rates));
+  const max=Math.round(n*Math.max(...rates));
+  return {min, max:Math.max(min,max)};
 }
 let JOIN_CODE='';
 function copyJoin(){
