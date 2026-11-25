@@ -243,6 +243,8 @@ label.lbl{font-size:9.5px;font-weight:800;color:var(--dim);display:block;margin:
   transition:transform .1s,filter .15s;position:relative;overflow:hidden;
 }
 .btn:active{transform:scale(.975)}
+.stock-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.stock-actions .btn{margin-top:0;padding:14px 10px;font-size:13px}
 .btn.primary{
   background:linear-gradient(150deg,#ffd98a,#e9a73b 55%,#c47a1f);color:#211407;
   box-shadow:0 10px 30px rgba(233,169,59,.32),inset 0 1px 0 rgba(255,255,255,.55);
@@ -721,9 +723,11 @@ body.nxt .overlay{padding-top:76px}
       <h2>Stock & Shift</h2>
       <p class="sub">Opening stock, refills and expected money — counts against the shelf.</p>
       <div id="shiftCard"></div>
-      <div id="stockList"></div>
-      <button class="btn ghost" onclick="openAddDrink()" style="margin-top:6px">+ Add drink</button>
-      <button class="btn primary" onclick="openTake()" style="margin-top:10px">🧮 Count shelf & value stock-take</button>
+      <div class="stock-actions">
+        <button class="btn ghost" onclick="openAddDrink()">+ Add drink</button>
+        <button class="btn primary" onclick="openTake()" title="Count shelf and value stock-take">🧮 Count shelf</button>
+      </div>
+      <div id="stockList" style="margin-top:12px"></div>
       <button class="btn ghost" onclick="newDay()" style="margin-top:10px">Start New Day · reset shift</button>
     </section>
   </main>
