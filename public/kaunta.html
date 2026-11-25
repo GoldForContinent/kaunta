@@ -123,6 +123,7 @@ main{padding:18px 16px 30px;position:relative;z-index:2}
 .stat.mpesa{--glow:rgba(63,174,90,.18)}.stat.mpesa .cdot{background:var(--mpesa)}
 .stat.deni{--glow:rgba(255,92,56,.18)}.stat.deni .cdot{background:var(--ember)}
 .stat.all{--glow:rgba(255,217,138,.22)}.stat.all .cdot{background:var(--paper)}
+.stat.ret{--glow:rgba(255,92,56,.18)}.stat.ret .cdot{background:var(--ember)}
 
 /* ============ cards ============ */
 .card{
@@ -140,7 +141,7 @@ main{padding:18px 16px 30px;position:relative;z-index:2}
 }
 .hero .lbl{font-size:10px;font-weight:700;color:var(--dim);letter-spacing:2.4px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
 .hero .total{display:flex;align-items:baseline;gap:4px;margin-top:10px;flex-wrap:wrap}
-.hero .foot{display:flex;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px dashed rgba(244,234,214,.12)}
+.hero .foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;margin-top:16px;padding-top:14px;border-top:1px dashed rgba(244,234,214,.12)}
 .hero .foot span{font-size:11px;color:var(--dim)}
 .hero .foot b{font-size:13px;font-family:var(--serif)}
 
@@ -184,6 +185,7 @@ main{padding:18px 16px 30px;position:relative;z-index:2}
 .tag.cash{background:rgba(233,185,92,.13);color:var(--gold)}
 .tag.mpesa{background:rgba(63,174,90,.12);color:var(--mpesa)}
 .tag.deni{background:rgba(255,92,56,.12);color:var(--ember)}
+.tag.return{background:rgba(255,92,56,.16);color:var(--ember)}
 .tag.full{background:rgba(244,234,214,.08);color:var(--paper)}
 .tag.half{background:rgba(233,185,92,.12);color:var(--gold)}
 .tag.quarter{background:rgba(120,160,220,.12);color:#93b7e6}
@@ -585,6 +587,7 @@ body.nxt .overlay{padding-top:76px}
         <div class="total"><span class="k">KES</span><span class="money fig-lg" id="heroTotal">0</span></div>
         <div class="foot">
           <span>Debt today <b id="heroDeni" class="money red">KES 0</b></span>
+          <span>Returns <b id="heroReturns" class="money red">KES 0</b></span>
           <span>Total sales <b id="heroSales" class="money grn">KES 0</b></span>
         </div>
       </div>
@@ -601,6 +604,8 @@ body.nxt .overlay{padding-top:76px}
         <div class="stat mpesa"><div class="lbl"><span class="cdot"></span>M-Pesa today</div><div class="val money grn" id="sMpesa">KES 0</div></div>
         <div class="stat deni"><div class="lbl"><span class="cdot"></span>Debt today</div><div class="val money red" id="sDebtDay">KES 0</div></div>
         <div class="stat all"><div class="lbl"><span class="cdot"></span>Total sales</div><div class="val" id="sAll" style="color:var(--paper)">KES 0</div></div>
+        <div class="stat ret"><div class="lbl"><span class="cdot"></span>Returns today</div><div class="val money red" id="sReturns">KES 0</div></div>
+        <div class="stat ret"><div class="lbl"><span class="cdot"></span>Items returned</div><div class="val" id="sRetCount" style="color:var(--paper)">0</div></div>
       </div>
 
       <div id="alerts"></div>
@@ -1464,6 +1469,12 @@ document.getElementById('chargeBtn').onclick=chargeRound;
 /* =============== DASH ============ */
 function todaySales(){ return DB.sales.filter(s=>todayStr(new Date(s.t))===todayStr()); }
 function byPay(ts,p){ return ts.filter(s=>s.pay===p).reduce((a,s)=>a+s.price,0); }
+/* A return is a reversal row, not a sale. Keep it visible, but never as a bare negative collection. */
+const isRet = s => !!s.isReturn || (s.price||0)<0;
+const salesOnly = ts => ts.filter(s=>!isRet(s));
+const returnsOnly = ts => ts.filter(isRet);
+const returnAmt = ts => returnsOnly(ts).reduce((a,s)=>a+Math.abs(s.price||0),0);
+const returnByPay = (ts,p) => returnsOnly(ts).filter(s=>s.pay===p).reduce((a,s)=>a+Math.abs(s.price||0),0);
 
 function countUp(el,to,cur){
   const start=cur||0, dur=500, t0=performance.now();
@@ -1476,20 +1487,27 @@ function countUp(el,to,cur){
 function renderDash(){
   try{
   const t=todaySales();
-  const cash=byPay(t,'cash'), mpesa=byPay(t,'mpesa'), deni=byPay(t,'deni');
+  const s=salesOnly(t), rets=returnsOnly(t);
+  const cash=Math.max(0,byPay(s,'cash')-returnByPay(t,'cash'));
+  const mpesa=Math.max(0,byPay(s,'mpesa')-returnByPay(t,'mpesa'));
+  const deni=Math.max(0,byPay(s,'deni')-returnByPay(t,'deni'));
   const sold=cash+mpesa;
+  const retTotal=returnAmt(t);
   countUp(document.getElementById('heroTotal'), sold);
   countUp(document.getElementById('hdTotal'), sold);
   countUp(document.getElementById('sCash'), cash);
   countUp(document.getElementById('sMpesa'), mpesa);
   countUp(document.getElementById('sDebtDay'), deni);
-  countUp(document.getElementById('sAll'), t.reduce((a,s)=>a+s.price,0));
+  countUp(document.getElementById('sAll'), s.reduce((a,x)=>a+x.price,0));
+  countUp(document.getElementById('sReturns'), retTotal);
+  document.getElementById('heroReturns').textContent=kes(retTotal);
+  document.getElementById('sRetCount').textContent=rets.length;
   document.getElementById('heroDeni').textContent=kes(deni);
-  document.getElementById('heroSales').textContent=kes(t.length);
+  document.getElementById('heroSales').textContent=s.length;
 
   /* hour heat — sales pace by KES per hour */
   let hh=new Array(24).fill(0);
-  t.forEach(s=>{ hh[new Date(s.t).getHours()] += (s.price||0); });
+  s.forEach(x=>{ hh[new Date(x.t).getHours()] += (x.price||0); });
   const max=Math.max(...hh,1);
   const hi=new Date().getHours();
   const heatEl=document.getElementById('heat'); if(heatEl) heatEl.title='Sales pace today (KES/hour)';
@@ -1544,8 +1562,8 @@ function renderDash(){
      <div style="margin:6px 0 2px;height:1px;background:var(--line)"></div>`+stockRows;
 
   /* top movers (skip internal pay/deni ledger entries) */
-  const real = t.filter(s=>DB.drinks.some(x=>x.id===s.drink));
-  const agg={}; real.forEach(s=>agg[s.drink]=(agg[s.drink]||0)+s.price);
+  const real = s.filter(x=>DB.drinks.some(y=>y.id===x.drink));
+  const agg={}; real.forEach(x=>agg[x.drink]=(agg[x.drink]||0)+x.price);
   const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,4);
   document.getElementById('topDrinks').innerHTML = top.length? top.map(([id,v])=>{
     const d=DB.drinks.find(x=>x.id===id);
@@ -1554,24 +1572,29 @@ function renderDash(){
   }).join('') : `<div class="empty"><div class="mark">${IC('coins')}</div>No sales yet — tap the counter first!</div>`;
 
   /* feed */
-  const feed=[...DB.sales].filter(s=>DB.drinks.some(x=>x.id===s.drink)).reverse().slice(0,6);
-  document.getElementById('feed').innerHTML = feed.map(s=>{
-    const d=DB.drinks.find(x=>x.id===s.drink);
-    const isT=todayStr(new Date(s.t))===todayStr();
-    const tm=new Date(s.t);
+  const feed=[...DB.sales].filter(x=>DB.drinks.some(y=>y.id===x.drink)).reverse().slice(0,6);
+  document.getElementById('feed').innerHTML = feed.map(x=>{
+    const d=DB.drinks.find(y=>y.id===x.drink);
+    const isT=todayStr(new Date(x.t))===todayStr();
+    const tm=new Date(x.t);
     const lbl=isT? (tm.getHours().toString().padStart(2,'0'))+':'+(tm.getMinutes().toString().padStart(2,'0')) : 'yesterday';
-    return `<div class="row"><div class="l"><b>${d.name} <span class="tag ${s.size}">${FR_LBL[s.size]}</span>${s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':''}</b>
-      <span>${lbl} · ${s.staff||s.who||'over counter'}</span></div>
-      <div class="r"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
-      <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span></div></div>`;
+    const ret=isRet(x);
+    return `<div class="row"><div class="l"><b>${d.name} ${ret?'<span class="tag return">Return</span> ':''}<span class="tag ${x.size}">${FR_LBL[x.size]}</span>${x.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':''}</b>
+      <span>${lbl} · ${x.staff||x.who||'over counter'}</span></div>
+      <div class="r"><b class="money${ret?' red':''}" style="font-size:15px">${kes(Math.abs(x.price||0))}</b><br>
+      <span class="tag ${x.pay}"><span class="dp"></span>${PL[x.pay]||x.pay}</span></div></div>`;
   }).join('');
 }catch(e){ console.error('renderDash error', e); }
 }
 
 function copyReport(){
-  const t=todaySales(), cash=byPay(t,'cash'), mpesa=byPay(t,'mpesa'), deni=byPay(t,'deni'), sold=cash+mpesa;
+  const t=todaySales(), s=salesOnly(t);
+  const cash=Math.max(0,byPay(s,'cash')-returnByPay(t,'cash'));
+  const mpesa=Math.max(0,byPay(s,'mpesa')-returnByPay(t,'mpesa'));
+  const deni=Math.max(0,byPay(s,'deni')-returnByPay(t,'deni'));
+  const sold=cash+mpesa;
   const out=DB.bar+' — '+todayStr()+' (Kaunta)\n\n'+
-    'Sales: '+kes(sold)+'\n  Cash: '+kes(cash)+'\n  M-Pesa: '+kes(mpesa)+'\nDebt today: '+kes(deni)+'\nTotal sales: '+t.length+
+    'Collected: '+kes(sold)+'\n  Cash: '+kes(cash)+'\n  M-Pesa: '+kes(mpesa)+'\nDebt today: '+kes(deni)+'\nReturns: '+kes(returnAmt(t))+' ('+returnsOnly(t).length+' items)\nSales: '+s.length+
     '\nDebt outstanding: '+kes(Object.values(DB.debts).reduce((a,b)=>a+b,0));
   if(navigator.clipboard) navigator.clipboard.writeText(out).then(()=>toast('Report copied')).catch(()=>toast(out));
   else toast(out);
@@ -1642,7 +1665,7 @@ function openCustomerPurchases(who){
       const nm=d?d.name:(s.drink||'Item');
       const tm=new Date(s.t);
       const lbl=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0')+' · '+todayStr(new Date(s.t));
-      return `<div class="row" style="border:none;padding:6px 0"><div class="l"><b>${esc(nm)}</b><span>${FR_LBL[s.size]||s.size} × ${s.qty} · ${lbl}</span></div><div class="r"><b class="money">${kes(s.price)}</b></div></div>`;
+      return `<div class="row" style="border:none;padding:6px 0"><div class="l"><b>${esc(nm)}${s.isReturn?' <span class="tag return">Return</span>':''}</b><span>${FR_LBL[s.size]||s.size} × ${s.qty} · ${lbl}</span></div><div class="r"><b class="money${s.isReturn?' red':''}">${kes(Math.abs(s.price||0))}</b></div></div>`;
   }).join('');
   openSheet(`
     <h3 class="serif">Purchases — ${esc(who)}</h3>
@@ -1692,15 +1715,17 @@ function renderHist(){
   let html='';
   Object.keys(groups).sort().reverse().forEach(k=>{
     const isT=todayStr()===k;
-    const sum=groups[k].reduce((a,s)=>a+s.price,0);
-    html+=`<div class="card"><div class="cardhead"><svg class="ic ic-s"><use href="#i-clock"/></svg>${isT?'Today':k}<span class="money" style="font-size:15px;margin-left:auto">${kes(sum)}</span></div>`;
+    const gross=groups[k].reduce((a,x)=>a+(x.price>0?x.price:0),0);
+    const back=groups[k].reduce((a,x)=>a+(x.price<0?-x.price:0),0);
+    const sum=Math.max(0,gross-back);
+    html+=`<div class="card"><div class="cardhead"><svg class="ic ic-s"><use href="#i-clock"/></svg>${isT?'Today':k}<span class="money" style="font-size:15px;margin-left:auto">${kes(sum)}</span>${back?`<span style="font-size:11px;color:var(--dim);margin-left:6px">returns ${kes(back)}</span>`:''}</div>`;
     html+=groups[k].map(s=>{
       const d=DB.drinks.find(x=>x.id===s.drink);
       const tm=new Date(s.t);
       const tmm=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0');
       return `<div class="row"><div class="l"><b>${d?d.name:'Loading…'} ${s.size?'<span class="tag '+s.size+'">'+FR_LBL[s.size]+'</span>':''}${s.qty>1?'  <span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">×'+s.qty+'</span>':''}${s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':''}${s.isReturn?' <span class="tag" style="background:rgba(255,92,56,.14);color:var(--ember)">RETURNED</span>':''}</b>
         <span>${tmm} · ${s.staff||s.who||'over counter'}</span></div>
-        <div class="r" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
+        <div class="r" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><b class="money${s.isReturn?' red':''}" style="font-size:15px">${kes(Math.abs(s.price||0))}</b><br>
         <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span>${!s.isReturn?`<button class="btn small ghost" style="margin-top:2px;padding:6px 10px;font-size:10.5px;background:rgba(255,92,56,.12);color:var(--ember);border:1px solid rgba(255,92,56,.3)" onclick="returnSale(${esc(JSON.stringify({id:s.uid||s.t,drink:s.drink,size:s.size,qty:s.qty,price:s.price,pay:s.pay,who:s.who,staff:s.staff}))})">Return</button>`:''}</div></div>`;
     }).join('');
     html+='</div>';

@@ -48,7 +48,7 @@ main{padding:16px}
   border:1px solid rgba(233,185,92,.16);box-shadow:0 14px 40px rgba(0,0,0,.4);margin-bottom:14px}
 .hero .lbl{font-size:10px;font-weight:700;color:var(--dim);letter-spacing:2.4px;text-transform:uppercase}
 .hero .total{display:flex;align-items:baseline;gap:4px;margin-top:10px;flex-wrap:wrap}
-.hero .foot{display:flex;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px dashed rgba(244,234,214,.12)}
+.hero .foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;margin-top:16px;padding-top:14px;border-top:1px dashed rgba(244,234,214,.12)}
 .hero .foot span{font-size:11px;color:var(--dim)}
 .hero .foot b{font-size:13px;font-family:var(--serif)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
@@ -69,6 +69,7 @@ main{padding:16px}
 .tag.cash{background:rgba(233,185,92,.13);color:var(--gold)}
 .tag.mpesa{background:rgba(63,174,90,.12);color:var(--mpesa)}
 .tag.deni{background:rgba(255,92,56,.12);color:var(--ember)}
+.tag.return{background:rgba(255,92,56,.16);color:var(--ember)}
 .heat{display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:6px}
 .heat i{flex:1;border-radius:3px 3px 0 0;background:rgba(233,185,92,.16);position:relative;min-height:3px}
 .heat i[data-v]{background:linear-gradient(180deg,#e9b95c,#7a5114)}
@@ -175,6 +176,7 @@ body.nxt .overlay{padding-top:76px}
       <div class="total"><span class="k">KES</span><span class="money fig-lg" id="heroTotal">0</span></div>
       <div class="foot">
         <span>Debt today <b id="heroDeni" class="money red">KES 0</b></span>
+        <span>Returns <b id="heroReturns" class="money red">KES 0</b></span>
         <span>Sales <b id="heroSales" class="money grn">0</b></span>
         <span>Shift <b id="heroShift">—</b></span>
       </div>
@@ -184,6 +186,8 @@ body.nxt .overlay{padding-top:76px}
       <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--mpesa)"></span>M-Pesa today</div><div class="val money grn" id="sMpesa">KES 0</div></div>
       <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--ember)"></span>Debt today</div><div class="val money red" id="sDebtDay">KES 0</div></div>
       <div class="stat"><div class="lbl"><span class="cdot" style="background:#f4ead6"></span>Sales today</div><div class="val" id="sCount" style="color:var(--paper)">0</div></div>
+      <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--ember)"></span>Returns today</div><div class="val money red" id="sReturns">KES 0</div></div>
+      <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--ember)"></span>Items returned</div><div class="val" id="sReturnCount" style="color:var(--paper)">0</div></div>
     </div>
     <div class="card">
       <div class="cardhead">Sales pace today</div>
@@ -380,6 +384,9 @@ async function loadSummary(){
   document.getElementById('sMpesa').textContent=kes(d.totals.mpesa);
   document.getElementById('sDebtDay').textContent=kes(d.totals.deni);
   document.getElementById('sCount').textContent=d.totals.count;
+  document.getElementById('heroReturns').textContent=kes(d.totals.returns||0);
+  document.getElementById('sReturns').textContent=kes(d.totals.returns||0);
+  document.getElementById('sReturnCount').textContent=d.totals.returnsCount||0;
 
   const hkes=d.hourlyKes||d.hourly?.map(x=>0)||new Array(24).fill(0);
   const max=Math.max(...hkes,1);
@@ -579,6 +586,7 @@ function auditText(it){
   const drink=dmap[p.drink]||'a drink';
   switch(it.type){
     case 'sale': return 'Sold '+drink+(p.qty>1?' ×'+p.qty:'')+' · '+kes(p.price)+(p.pay?' · '+p.pay:'');
+    case 'return_sale': return 'Returned '+drink+(p.qty>1?' ×'+p.qty:'')+' · '+kes(Math.abs(p.price||0))+(p.pay?' · '+p.pay:'');
     case 'restock': return 'Restocked '+drink+' +'+(p.qty||1)+' bottles';
     case 'set_open': return 'Opened '+drink+' at '+(p.open||0)+' bottles';
     case 'add_drink': return 'Added '+(p.name||'a drink');
@@ -656,8 +664,10 @@ function renderFeed(feed){
   el.innerHTML=feed.map(s=>{
     const tm=new Date(s.t);
     const lbl=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0');
-    return '<div class="row"><div class="l"><b>'+s.name+' <span class="tag '+(s.size||'full')+'">'+cap(s.size||'Full')+'</span>'+(s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':'')+'</b><span>'+lbl+' · '+(s.staff||s.who||'over counter')+'</span></div>'+
-      '<div class="r"><b class="money" style="font-size:15px">'+kes(s.price)+'</b><br><span class="tag '+s.pay+'">'+({cash:'Cash',mpesa:'M-Pesa',deni:'Debt'}[s.pay]||s.pay)+'</span></div></div>';
+    const ret=!!s.isReturn || (s.price||0)<0;
+    const amt=Math.abs(s.price||0);
+    return '<div class="row"><div class="l"><b>'+esc(s.name)+' '+(ret?'<span class="tag return">Return</span>':'')+' <span class="tag '+(s.size||'full')+'">'+cap(s.size||'Full')+'</span>'+(s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':'')+'</b><span>'+lbl+' · '+(s.staff||s.who||'over counter')+'</span></div>'+
+      '<div class="r"><b class="money'+(ret?' red':'')+'" style="font-size:15px">'+kes(amt)+'</b><br><span class="tag '+s.pay+'">'+({cash:'Cash',mpesa:'M-Pesa',deni:'Debt'}[s.pay]||s.pay)+'</span></div></div>';
   }).join('');
 }
 const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
