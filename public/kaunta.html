@@ -785,6 +785,9 @@ function normDB(){
     if(d.divisible===undefined) d.divisible=(d.quarter>0||d.half>0)?1:0;
     if(d.shot_ml===undefined) d.shot_ml=0;
     if(d.shot_price===undefined) d.shot_price=0;
+    if(d.goods===undefined) d.goods=0;
+    if(d.unit===undefined) d.unit='';
+    if(d.sub_unit===undefined) d.sub_unit='';
     if(d.stockMl===undefined) d.stockMl=(d.open||0)*Ml(d);
     if(d.cups===undefined) d.cups=[];
     if(!Array.isArray(d.cups)) d.cups=cupsOf(d);
@@ -891,12 +894,13 @@ function applyRemote(type,p){
     case 'set_open': {
       const d=DB.drinks.find(x=>x.id===p.drink);
       if(d){
-        const v=Math.max(0,Math.round(Number(p.open)||0));
         // The stored drink is authoritative; an explicit flag only wins when the
         // drink is being converted in this op. Legacy kegs without a flag are bottles.
         const keg=p.keg===undefined ? !d.legacyKegUnits && isKeg(d) : !!p.keg;
-        if(keg){ d.open=v; d.stockMl=v; }
-        else { d.open=Math.round(v); d.stockMl=Math.round(v*Ml(d)); d.barrels=0; }
+        const dp=keg?1:(isGoods(d)?1000:1);
+        const v=Math.max(0,Math.round((Number(p.open)||0)*dp)/dp);
+        if(keg){ d.open=Math.round(v); d.stockMl=d.open; }
+        else { d.open=v; d.stockMl=Math.round(v*Ml(d)); d.barrels=0; }
         if(p.keg) d.legacyKegUnits=0;
       }
       break;
@@ -913,6 +917,7 @@ function applyRemote(type,p){
           open:keg&&explicit?open:0,soldMl:0,divisible:p.divisible?1:0,
           shot_ml:Number(p.shot_ml)||0,shot_price:Math.round(p.shot_price)||0,
           stockMl:stock,keg:keg?1:0,cups,legacyKegUnits:keg&&!explicit?1:0,
+          goods:p.goods?1:0,unit:p.unit||'',sub_unit:p.sub_unit||'',
           barrels:Math.max(0,Math.round(Number(p.barrels)||0)),barrelMl:Math.max(1,Math.round(Number(p.barrelMl)||50000))});
       }
       break;
@@ -925,7 +930,8 @@ function applyRemote(type,p){
       const d=DB.drinks.find(x=>x.id===p.drink);
       if(d){
         const keg=p.keg===undefined ? !d.legacyKegUnits && isKeg(d) : !!p.keg;
-        const q=Math.max(keg?0:1,Math.round(Number(p.qty)||1));
+        const goods=isGoods(d);
+        const q=keg?Math.max(0,Math.round(Number(p.qty)||0)):goods?Math.max(0.001,Math.round((Number(p.qty)||0)*1000)/1000):Math.max(1,Math.round(Number(p.qty)||1));
         // open is the baseline for expected money; received stock is tracked separately.
         if(keg){ d.stockMl=(Number(d.stockMl)||0)+q; }
         else { d.stockMl=(d.stockMl===undefined?0:Number(d.stockMl)||0)+q*Ml(d); }
@@ -982,6 +988,11 @@ function applyRemote(type,p){
       if(d){
         d.divisible=p.divisible?1:0; d.shot_ml=parseFloat(p.shot_ml)||0; d.shot_price=Math.round(p.shot_price)||0;
         if(Array.isArray(p.cups)) d.cups=p.cups;
+        if(p.goods!==undefined) d.goods=p.goods?1:0;
+        if(p.unit!==undefined) d.unit=p.unit||'';
+        if(p.sub_unit!==undefined) d.sub_unit=p.sub_unit||'';
+        if(p.size!==undefined) d.size=Math.max(1,parseFloat(p.size)||1);
+        if(p.full!==undefined) d.full=Math.max(0,Math.round(p.full||0));
         if(p.keg!==undefined) d.keg=p.keg?1:0;
         else if(d.keg===undefined && cupsOf(d).length) d.keg=1;
         if(p.keg===1) d.legacyKegUnits=0;
@@ -1003,12 +1014,12 @@ function applyRemote(type,p){
       DB.drinks.forEach(d=>{
         if(counts[d.id]!=null){
           const keg=isKeg(d);
-          const c=keg?Math.max(0,Math.round(Number(counts[d.id])||0)):Math.max(0,Math.round(Number(counts[d.id])*100)/100);
+          const c=keg?Math.max(0,Math.round(Number(counts[d.id])||0)):Math.max(0,Math.round(Number(counts[d.id])*(isGoods(d)?1000:100))/(isGoods(d)?1000:100));
           if(keg){
             const b=Number(d.barrelMl)||50000;
             d.barrels=Math.max(0,Math.floor(c/b));
             d.open=c; d.stockMl=c;
-          } else { d.open=Math.round(c); d.stockMl=Math.round(c*Ml(d)); d.barrels=0; }
+          } else { d.open=isGoods(d)?c:Math.round(c); d.stockMl=Math.round(c*Ml(d)); d.barrels=0; }
           if(p.set_shelf) d.soldMl=0;
         }
       });
@@ -1431,13 +1442,19 @@ function renderSell(){
       const cls = left<=0?'warn':(total>0&&left/total<0.25?'full':'');
       const prices=(d.cups||[]).map(c=>Number(c.price)||0).filter(p=>p>0);
       const from=prices.length?kes(Math.min(...prices))+' cup':'—';
-      const shotOnly=!keg && !d.divisible && d.shot_ml>0 && d.shot_price>0;
+      const goods=isGoods(d), unit=unitName(d);
+      const shotOnly=!keg && !goods && !d.divisible && d.shot_ml>0 && d.shot_price>0;
+      const stockText=keg?active+' ml in barrel'+(d.barrels?' · '+d.barrels+' reserve':'')
+        :goods?((left/Ml(d)).toFixed(2)+' '+esc(unit)+' on hand'+(goodsHasSub(d)?' · '+Math.floor(left/Math.max(1,d.shot_ml))+' '+esc(subName(d)):''))
+        :(d.size+' ml · '+(left/Ml(d)).toFixed(1)+' left');
+      const fig=keg?from:(goods?kes(d.full):(shotOnly?kes(d.shot_price):kes(d.full)));
+      const figLbl=keg?'from cup':(goods?esc(unit):(shotOnly?'per shot':'full'));
       const div=document.createElement('div');
       div.className='drink'+(S.drink===d.id?' sel':'');
       div.innerHTML=`
         <div class="bot"><i style="height:${pct}%" class="${cls}"></i></div>
-        <div class="info"><b>${esc(d.name)}</b><span>${keg?active+' ml in barrel'+(d.barrels?' · '+d.barrels+' reserve':''):d.size+' ml · '+(left/Ml(d)).toFixed(1)+' left'}</span>${d.quick?'<div class="qk">★ Quick add</div>':''}${d.cups&&d.cups.length?'<div class="qk">🥤 Cups: '+d.cups.map(c=>c.label+'.'+kes(c.price)).join(', ')+'</div>':''}</div>
-        <div class="pr"><div class="fig">${keg?from:(shotOnly?kes(d.shot_price):kes(d.full))}</div><small>${keg?'from cup':(shotOnly?'per shot':'full')}</small></div>`;
+        <div class="info"><b>${esc(d.name)}</b><span>${stockText}</span>${d.quick?'<div class="qk">★ Quick add</div>':''}${d.cups&&d.cups.length?'<div class="qk">🥤 Cups: '+d.cups.map(c=>c.label+'.'+kes(c.price)).join(', ')+'</div>':''}${goods&&goodsHasSub(d)?'<div class="qk">'+esc(subName(d))+' '+kes(d.shot_price)+'</div>':''}</div>
+        <div class="pr"><div class="fig">${fig}</div><small>${figLbl}</small></div>`;
       div.onclick=()=>{S.drink=d.id; renderSell(); updChips();};
       el.appendChild(div);
     });
@@ -1447,10 +1464,10 @@ function updChips(){
   try{
   const d=DB.drinks.find(x=>x.id===S.drink)||{};
   const keg=isKeg(d);
-  const hasShot=!keg && d.shot_ml>0 && d.shot_price>0;
+  const hasShot=!keg && !isGoods(d) && d.shot_ml>0 && d.shot_price>0;
   const shotsOnly=hasShot && !d.divisible;
-  // Sell only the sizes this drink actually supports.
-  const sizes=keg?[]:(shotsOnly?['shot']:(d.divisible?['full','half','quarter']:['full']));
+  // Sell only the sizes this product actually supports.
+  const sizes=keg?[]:(isGoods(d)?(goodsHasSub(d)?['unit','sub']:['unit']):(shotsOnly?['shot']:(d.divisible?['full','half','quarter']:['full'])));
   if(hasShot && !shotsOnly) sizes.push('shot');
   const cups=keg?(d.cups||[]):[];
   const wrap=document.getElementById('sizeChips');
@@ -1462,7 +1479,7 @@ function updChips(){
       const ci=parseInt(key.slice(3)); const cup=cups[ci];
       label=cup.label; p=cup.price;
     } else {
-      label=FR_LBL[key]||key; p=drinkPrice(d,key);
+      label=sizeLabel(d,key); p=drinkPrice(d,key);
     }
     if(p>0) avail.push(key);
     const c=document.createElement('div');
@@ -1531,14 +1548,14 @@ function renderRound(){
     const d=DB.drinks.find(x=>x.id===l.drink);
     const nm=d?d.name:(l.drink||'?');
     const deni = l.pay==='deni';
-    let sizeLabel=FR_LBL[l.size]||l.size;
+    let label=d?sizeLabel(d,l.size):(FR_LBL[l.size]||l.size);
     if(l.size&&l.size.startsWith('cup')&&d){
       const ci=parseInt(l.size.slice(3)); const cup=d.cups?d.cups[ci]:null;
-      if(cup) sizeLabel=cup.label+' ('+cup.ml+'ml)';
+      if(cup) label=cup.label+' ('+cup.ml+'ml)';
     }
     return `<div style="padding:9px 0;border-bottom:1px solid var(--line)">
       <div class="row" style="border:none;padding:2px 0">
-        <div class="l"><b style="font-size:13.5px">${nm}</b><span>${sizeLabel} × ${l.qty}${l.who?' · '+esc(l.who):''}</span></div>
+        <div class="l"><b style="font-size:13.5px">${nm}</b><span>${label} × ${l.qty}${l.who?' · '+esc(l.who):''}</span></div>
         <div class="r"><b class="money" style="font-size:15px">${kes(roundAmt(l))}</b></div>
       </div>
       <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
@@ -1659,7 +1676,7 @@ function renderDash(){
     const left=roundLeft(d);
     if(left<-1){
       alarms++;
-      const amt=isKeg(d)?Math.abs(left).toFixed(0)+' ml':Math.abs(left/Ml(d)).toFixed(1)+' bottles';
+      const amt=isKeg(d)?Math.abs(left).toFixed(0)+' ml':isGoods(d)?Math.abs(left/Ml(d)).toFixed(1)+' '+unitName(d):Math.abs(left/Ml(d)).toFixed(1)+' bottles';
       al.innerHTML+=`<div class="alert alarm"><div class="sig">${IC('alert')}</div><div><h4>⚠ ${d.name} oversold by ${amt}</h4><p>Expected stock doesn't match the sales logged. Spot-count now.</p></div></div>`;
     }
   });
@@ -1736,8 +1753,11 @@ function renderStockCheck(){
     const low=left<=0 || pct<25;
     const rank=out?0:over?1:low?2:3;
     const flag=out?' <span style="color:var(--ember)">· OFF!</span>':over?' <span style="color:var(--ember)">· OVER!</span>':'';
+    const goods=isGoods(d);
+    const leftTxt=goods?`${(left/Math.max(1,Ml(d))).toFixed(2)} ${esc(unitName(d))}`:`${left.toFixed(0)} ml`;
+    const totalTxt=goods?`${(total/Math.max(1,Ml(d))).toFixed(2)} ${esc(unitName(d))}`:`${total.toFixed(0)} ml`;
     return {rank,name:(d.name||'').toLowerCase(),html:`<div style="margin-bottom:12px"><div class="row" style="border:none;padding:3px 0">
-      <div class="l"><b style="font-size:13.5px">${d.name}</b><span>${isKeg(d)?active.toFixed(0)+' ml active'+(d.barrels?' · '+d.barrels+' reserve':''):left.toFixed(0)+' ml'}/${total.toFixed(0)} ml</span></div>
+      <div class="l"><b style="font-size:13.5px">${d.name}</b><span>${isKeg(d)?active.toFixed(0)+' ml active'+(d.barrels?' · '+d.barrels+' reserve':''):leftTxt}/${totalTxt}</span></div>
       <div class="r" style="text-align:right"><div style="font-family:var(--serif);font-weight:800;font-size:12.5px;color:var(--gold)">KES ${band.min} – ${band.max}</div>
       <div class="mini" style="margin:0;line-height:1.3">ledger ${kes(book)}${flag}</div></div></div>
       <div class="gauge"><i class="${cls}" style="width:${pct}%"></i></div></div>`};
@@ -1837,7 +1857,8 @@ function openCustomerPurchases(who){
       const nm=d?d.name:(s.drink||'Item');
       const tm=new Date(s.t);
       const lbl=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0')+' · '+todayStr(new Date(s.t));
-      return `<div class="row" style="border:none;padding:6px 0"><div class="l"><b>${esc(nm)}${s.isReturn?' <span class="tag return">Return</span>':''}</b><span>${FR_LBL[s.size]||s.size} × ${s.qty} · ${lbl}</span></div><div class="r"><b class="money${s.isReturn?' red':''}">${kes(Math.abs(s.price||0))}</b></div></div>`;
+      const sizeLbl=d?sizeLabel(d,s.size):(FR_LBL[s.size]||s.size||'');
+      return `<div class="row" style="border:none;padding:6px 0"><div class="l"><b>${esc(nm)}${s.isReturn?' <span class="tag return">Return</span>':''}</b><span>${sizeLbl} × ${s.qty} · ${lbl}</span></div><div class="r"><b class="money${s.isReturn?' red':''}">${kes(Math.abs(s.price||0))}</b></div></div>`;
   }).join('');
   openSheet(`
     <h3 class="serif">Purchases — ${esc(who)}</h3>
@@ -1921,10 +1942,20 @@ function returnSale(o){
 function Ml(d){ return parseFloat(d.size); }
 /* A keg is one barrel measured in ml and sold by cups — never by bottle steps. */
 function isKeg(d){ return !!d && (d.keg===1 || (d.keg!==0 && cupsOf(d).length>0)); }
+/* Goods use the same stock row: size = units per pack, stockMl = smallest units. */
+function isGoods(d){ return !!d && !!d.goods; }
+function goodsHasSub(d){ return isGoods(d) && (+d.shot_ml||0)>0 && (+d.shot_price||0)>0; }
+function unitName(d){ return (isGoods(d)&&d.unit)||'unit'; }
+function subName(d){ return (isGoods(d)&&d.sub_unit)||'piece'; }
 function cupRates(d){ return cupsOf(d).map(c=>c&&+c.ml>0&&+c.price>0?(+c.price)/(+c.ml):0).filter(r=>r>0); }
 function pourMl(d,size,qty){
   qty=Math.max(1,Math.round(qty||1)); if(!d) return 0;
   if(size&&size.startsWith('cup')){ const cup=cupsOf(d)[parseInt(size.slice(3))]; return cup?Math.round((+cup.ml||0)*qty):0; }
+  if(isGoods(d)){
+    if(size==='unit') return Math.round(Ml(d)*qty);
+    if(size==='sub') return Math.round((+d.shot_ml||1)*qty);
+    return 0;
+  }
   // Kegs have no bottle/shot steps. Unknown sizes never silently burn stock.
   if(isKeg(d)) return 0;
   if(size==='shot') return Math.round((+d.shot_ml||0)*qty);
@@ -1933,12 +1964,21 @@ function pourMl(d,size,qty){
 function drinkPrice(d,size){
   if(!d) return 0;
   if(size&&size.startsWith('cup')){ const cup=cupsOf(d)[parseInt(size.slice(3))]; return cup?Number(cup.price)||0:0; }
+  if(isGoods(d)){
+    if(size==='unit') return Number(d.full)||0;
+    if(size==='sub') return Number(d.shot_price)||0;
+    return 0;
+  }
   if(isKeg(d)) return 0;
   if(size==='shot') return Number(d.shot_price)||0;
   return Number(d[size])||0;
 }
 function sizeLabel(d,size){
   if(size&&size.startsWith('cup')){ const cup=cupsOf(d)[parseInt(size.slice(3))]; if(cup) return cup.label; }
+  if(isGoods(d)){
+    if(size==='unit') return unitName(d);
+    if(size==='sub') return subName(d);
+  }
   return FR_LBL[size]||size||'';
 }
 /* Every plausible price for one ordinary bottle in this drink's selling mode. */
@@ -1954,10 +1994,17 @@ function bottleRates(d){
   return rates.filter(r=>r>0);
 }
 function bottleMax(d){ const r=bottleRates(d); return r.length?Math.max(...r):0; }
-/* Expected revenue band. Bottles are fractional counts; kegs are ml sold by cup-rate. */
+/* Goods: cheapest / dearest way to sell one pack (or one piece). */
+function goodsRates(d){
+  const rates=[Math.max(0,+d.full||0)];
+  // Cheapest/dearest way to sell one pack: whole units, or n sub-unit portions.
+  if(goodsHasSub(d)) rates.push(Math.floor(Math.max(1,Ml(d))/Math.max(1,+d.shot_ml))*(+d.shot_price||0));
+  return rates.filter(r=>r>0);
+}
+/* Expected revenue band. Bottles/goods are pack counts; kegs are ml sold by cup-rate. */
 function drinkBand(d, units){
   const n=Math.max(0,Number(units)||0);
-  const rates=isKeg(d)?cupRates(d):bottleRates(d);
+  const rates=isKeg(d)?cupRates(d):(isGoods(d)?goodsRates(d):bottleRates(d));
   if(!rates.length) return {min:0,max:0};
   const min=Math.round(n*Math.min(...rates));
   const max=Math.round(n*Math.max(...rates));
@@ -1974,9 +2021,11 @@ function renderStock(){
     const band=drinkBand(d,keg?sold:sold/Ml(d));
     const stockBand=drinkBand(d,keg?left:left/Ml(d));
     const rest=todayRest(d);
-    const hasShots=!keg && d.shot_ml>0 && d.shot_price>0;
+    const goods=isGoods(d), unit=unitName(d), sub=subName(d), hasSub=goodsHasSub(d);
+    const hasShots=!keg && !goods && d.shot_ml>0 && d.shot_price>0;
     const shotsOnly=hasShots && !d.divisible;
     const typeTag=keg? '<span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">keg · ml</span>'
+      : goods? `<span class="tag" style="background:rgba(233,185,92,.10);color:var(--gold)">goods · ${esc(unit)}</span>`
       : shotsOnly? `<span class="tag quarter">shots only · ${d.shot_ml}ml</span>`
       : hasShots? `<span class="tag quarter">full + ${d.shot_ml}ml shots</span>`
       : !d.divisible ? '<span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">whole only</span>'
@@ -1997,7 +2046,12 @@ function renderStock(){
         <input type="number" value="${d.shot_price}" onchange="setPrice('${d.id}','shot_price',this.value)" style="margin-bottom:0;padding:11px 12px">
       </div>
       <div class="mini" style="margin-top:4px">${Math.floor(Ml(d)/Math.max(1,d.shot_ml))} shots per ${d.size} ml · use Split / shots for other options</div></div>`;
-    const priceControl=keg?'':(shotsOnly?shotBlock:(hasShots?divBlock+shotBlock:(d.divisible?divBlock:fullBlock)));
+    const goodsBlock=`<div><label class="lbl">Price per ${esc(unit)}</label>
+      <input type="number" value="${d.full}" onchange="setPrice('${d.id}','full',this.value)" style="padding:11px 12px"></div>`+
+      (hasSub?`<div style="margin-top:8px"><label class="lbl">Price per ${esc(sub)}</label>
+      <input type="number" value="${d.shot_price}" onchange="setPrice('${d.id}','shot_price',this.value)" style="padding:11px 12px">
+      <div class="mini" style="margin-top:4px">${Math.max(1,Math.round(Ml(d)/Math.max(1,d.shot_ml)))} ${esc(sub)} per ${esc(unit)} · use Goods options to change</div></div>`:'');
+    const priceControl=keg?'':(goods?goodsBlock:(shotsOnly?shotBlock:(hasShots?divBlock+shotBlock:(d.divisible?divBlock:fullBlock))));
     const stockControl=keg?`
       <div>
         <label class="lbl">Ml left in active barrel</label>
@@ -2028,7 +2082,7 @@ function renderStock(){
       </div>
       <div><label class="lbl">Cup prices</label><div class="mini" style="margin-top:0">${cupRows}</div></div>`
     :`
-      <div><label class="lbl">Opening bottles</label>
+      <div><label class="lbl">Opening ${goods?esc(unit):'bottles'}</label>
         <div class="stepper">
           <button onclick="setOpen('${d.id}',-1)">−</button><span id="op-${d.id}">${d.open}</span><button onclick="setOpen('${d.id}',1)">+</button>
         </div>
@@ -2036,6 +2090,8 @@ function renderStock(){
       ${priceControl}`;
     const shelfLine=keg
       ? `Active: <b>${active} ml</b>${d.barrels?' · <b>'+d.barrels+'</b> full barrels ('+kes(d.barrels*b)+' worth)':''} · total <b>${left} ml</b> · sold today <b>${sold} ml</b>${rest?' · received <b>+'+rest+' ml</b>':''}`
+      : goods
+      ? `On hand: <b>${(left/Ml(d)).toFixed(2)} ${esc(unit)}</b>${hasSub?` (${Math.floor((Number(d.stockMl)||0)/Math.max(1,d.shot_ml))} ${esc(sub)})`:''} · sold today <b>${(sold/Ml(d)).toFixed(2)} ${esc(unit)}</b>${rest?' · received <b>+'+rest+' '+esc(unit)+'</b>':''}`
       : `On the shelf: <b>${(left/Ml(d)).toFixed(1)} bottles</b> · sold today <b>${(sold/Ml(d)).toFixed(1)}</b>${rest?' · restocked <b>+'+rest+'</b>':''}`;
     return `<div class="card">
       <div class="row" style="border:none;padding:0 0 4px"><b style="font-size:15.5px">${esc(d.name)}</b>${typeTag}${cupTag}<button class="btn small ghost" style="margin-left:auto;padding:6px 10px;color:var(--ember)" onclick="delDrink('${d.id}')">Delete</button></div>
@@ -2044,12 +2100,12 @@ function renderStock(){
       <div class="mini" style="margin-top:6px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px">
         <div>Expected from sold stock: <b class="money" style="font-style:normal;font-size:12px">KES ${band.min} – ${band.max}</b></div>
         <div style="margin-top:3px">Stock value if sold: <b class="money" style="font-style:normal;font-size:12px">KES ${stockBand.min} – ${stockBand.max}</b></div>
-        <div style="color:var(--dim);margin-top:2px">${keg?'cup prices per ml · all ml on hand':shotsOnly?'shots per bottle · all bottles on shelf':d.divisible?'full / half / quarter / shots · all bottles on shelf':'full bottle only · all bottles on shelf'}</div>
+        <div style="color:var(--dim);margin-top:2px">${keg?'cup prices per ml · all ml on hand':goods?(hasSub?`${esc(unit)} / ${esc(sub)} price · all units on hand`:`${esc(unit)} price · all units on hand`):shotsOnly?'shots per bottle · all bottles on shelf':d.divisible?'full / half / quarter / shots · all bottles on shelf':'full bottle only · all bottles on shelf'}</div>
       </div>
       <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn small ghost" style="flex:1" onclick="addToTake('${d.id}')">+ Count ${keg?'barrel':'shelf'}</button>
-        <button class="btn small ghost" style="flex:1" onclick="openRestock('${d.id}')">+ Received ${keg?'ml':'stock'}</button>
-        <button class="btn small ghost" style="flex:1" onclick="openSplit('${d.id}')">${keg?'Cup prices':'Split / shots'}</button>
+        <button class="btn small ghost" style="flex:1" onclick="addToTake('${d.id}')">+ Count ${keg?'barrel':(goods?unit:'shelf')}</button>
+        <button class="btn small ghost" style="flex:1" onclick="openRestock('${d.id}')">+ Received ${keg?'ml':(goods?unit:'stock')}</button>
+        <button class="btn small ghost" style="flex:1" onclick="openSplit('${d.id}')">${keg?'Cup prices':(goods?'Goods options':'Split / shots')}</button>
       </div>
     </div>`;
   }).join('');
@@ -2165,8 +2221,8 @@ function takeBase(id){
   let base=0;
   const lastTake=(DB.stocktakes||[])[0]||null;
   if(lastTake){ try{ base=Number((lastTake.counts||{})[id])||0; }catch(e){ base=0; } }
-  else { const d=DB.drinks.find(x=>x.id===id); base=Math.max(0,Math.round(d?d.open:0)); }
-  const restC=(DB.restocks||[]).filter(r=>r.drink===id && r.t>since).reduce((a,r)=>a+Math.round(r.qty||0),0);
+  else { const d=DB.drinks.find(x=>x.id===id); const dp=d&&isGoods(d)?1000:1; base=Math.max(0,Math.round((Number(d&&d.open)||0)*dp)/dp); }
+  const restC=(DB.restocks||[]).filter(r=>r.drink===id && r.t>since).reduce((a,r)=>a+Number(r.qty||0),0);
   const wasteC=(DB.waste||[]).filter(w=>w.drink===id && w.t>since).reduce((a,w)=>a+Math.round(w.qty||0),0);
   return {base, restC:restC-wasteC, since};
 }
@@ -2175,22 +2231,25 @@ function openTake(focusId){
   TAKE={};
   DB.drinks.forEach(d=>{ TAKE[d.id]=isKeg(d)?Math.max(0,Math.round(roundLeft(d)||0)):Math.max(0,Math.round((roundLeft(d)||0)/Ml(d)*100)/100); });
   const rows=DB.drinks.map(d=>{
-    const keg=isKeg(d);
+    const keg=isKeg(d), goods=isGoods(d);
+    const desc=keg?`~${activeMlOf(d)} ml active · ${d.barrels||0} full barrels reserve`
+      :goods?`${goodsHasSub(d)?Math.floor(Ml(d)/Math.max(1,d.shot_ml))+' '+esc(subName(d)):Ml(d)+' base units'} per ${esc(unitName(d))} · ~${TAKE[d.id]} ${esc(unitName(d))} on hand`
+      :`${Ml(d)} ml bottle · ~${TAKE[d.id]} on shelf now`;
     return `<div style="padding:10px 0;border-bottom:1px solid var(--line)">
       <div class="row" style="border:none;padding:2px 0">
-        <div class="l"><b style="font-size:13.5px">${esc(d.name)}</b><span>${keg?`~${activeMlOf(d)} ml active · ${d.barrels||0} full barrels reserve`:`${Ml(d)} ml bottle · ~${TAKE[d.id]} on shelf now`}</span></div>
+        <div class="l"><b style="font-size:13.5px">${esc(d.name)}</b><span>${desc}</span></div>
         <div class="r"><b class="money" style="font-size:15px" id="ban-${d.id}"></b></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
-        <label class="lbl" style="margin:0;width:104px;flex:none">${keg?'Total ml':'Bottles now'}</label>
-        <input type="number" min="0" step="${keg?'10':'0.25'}" value="${TAKE[d.id]}" id="tk-${d.id}" style="flex:1;margin:0" oninput="bandOne('${d.id}')">
+        <label class="lbl" style="margin:0;width:104px;flex:none">${keg?'Total ml':(goods?esc(unitName(d))+' now':'Bottles now')}</label>
+        <input type="number" min="0" step="${keg?'10':(goods?Math.min(0.25,1/Math.max(1,Ml(d))):'0.25')}" value="${TAKE[d.id]}" id="tk-${d.id}" style="flex:1;margin:0" oninput="bandOne('${d.id}')">
       </div>
       <div class="mini" id="bandm-${d.id}" style="margin-top:4px"></div>
     </div>`;
   }).join('');
   openSheet(`
     <h3 class="serif">Count stock · stock-take</h3>
-    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Type what is on hand <b>right now</b> — total ml for a keg (active barrel + sealed barrels), or bottles (halves and quarters count too, e.g. 1.5). Kaunta values the consumed stock and records it.</p>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Type what is on hand <b>right now</b> — total ml for a keg, bottles for drinks, or packs/pieces for goods. Kaunta values the consumed stock and records it.</p>
     <div id="takeRows">${rows}</div>
     <div class="subrow" style="border:none;padding:12px 0 4px"><span>Expected for consumed stock</span><b class="money" id="takeExpected">KES 0 – 0</b></div>
     <div class="subrow" style="border:none;padding:4px 0"><span>Ledger since last take</span><b id="takeLedger">KES 0</b></div>
@@ -2212,14 +2271,14 @@ function bandOne(id){
   const d=DB.drinks.find(x=>x.id===id); if(!d) return;
   const keg=isKeg(d);
   const el=document.getElementById('tk-'+id);
-  const c=keg?Math.max(0,Math.round(Number(el?el.value:0)||0)):Math.max(0,Math.round((parseFloat(el?el.value:0)||0)*100)/100);
+  const c=keg?Math.max(0,Math.round(Number(el?el.value:0)||0)):Math.max(0,Math.round((parseFloat(el?el.value:0)||0)*(isGoods(d)?1000:100))/(isGoods(d)?1000:100));
   TAKE[id]=c;
   const {base,restC,since}=takeBase(id);
   const consumed=Math.max(0, base+restC-c);
   const band=drinkBand(d,consumed);
   const ledger=DB.sales.filter(s=>s.drink===id && s.t>(since||0)).reduce((a,s)=>a+s.price,0);
   const b=document.getElementById('ban-'+id); if(b) b.textContent='KES '+band.min+' – '+band.max;
-  const m=document.getElementById('bandm-'+id); if(m) m.innerHTML='consumed <b>'+consumed.toFixed(keg?0:1)+' '+(keg?'ml':'bottles')+'</b> · ledger <b>'+kes(ledger)+'</b>';
+  const m=document.getElementById('bandm-'+id); if(m) m.innerHTML='consumed <b>'+consumed.toFixed(keg?0:1)+' '+(keg?'ml':(isGoods(d)?esc(unitName(d)):'bottles'))+'</b> · ledger <b>'+kes(ledger)+'</b>';
   computeTakeTotals();
 }
 function computeTakeTotals(){
@@ -2248,7 +2307,7 @@ function saveTake(){
   const setShelf=!!(document.getElementById('tkSetShelf')&&document.getElementById('tkSetShelf').checked);
   const st=curStaff(), rid=oid(), t=Date.now();
   // Value the consumption window before replacing the shelf baseline.
-  const counts={}; DB.drinks.forEach(d=>{ if(TAKE[d.id]!=null) counts[d.id]=isKeg(d)?Math.max(0,Math.round(TAKE[d.id])):Math.max(0,Math.round(TAKE[d.id]*100)/100); });
+  const counts={}; DB.drinks.forEach(d=>{ if(TAKE[d.id]!=null) counts[d.id]=isKeg(d)?Math.max(0,Math.round(TAKE[d.id])):Math.max(0,Math.round(TAKE[d.id]*(isGoods(d)?1000:100))/(isGoods(d)?1000:100)); });
   let a=0,b=0,c=0;
   DB.drinks.forEach(d=>{
     if(TAKE[d.id]==null) return;
@@ -2261,12 +2320,12 @@ function saveTake(){
   DB.drinks.forEach(d=>{
     if(TAKE[d.id]==null) return;
     const keg=isKeg(d);
-    const c=keg?Math.max(0,Math.round(TAKE[d.id])):Math.max(0,Math.round(TAKE[d.id]*100)/100);
+    const c=keg?Math.max(0,Math.round(TAKE[d.id])):Math.max(0,Math.round(TAKE[d.id]*(isGoods(d)?1000:100))/(isGoods(d)?1000:100));
     if(keg){
       const bm=Number(d.barrelMl)||50000;
       d.barrels=Math.max(0,Math.floor(c/bm));
       d.open=c; d.stockMl=c;
-    } else { d.open=Math.round(c); d.stockMl=Math.round(c*Ml(d)); d.barrels=0; }
+    } else { d.open=isGoods(d)?c:Math.round(c); d.stockMl=Math.round(c*Ml(d)); d.barrels=0; }
     if(setShelf) d.soldMl=0;
   });
   DB.stocktakes.unshift({id:rid, t, note, counts, totals, set_shelf:setShelf});
@@ -2277,42 +2336,44 @@ function saveTake(){
 }
 function addToTake(id){ openTake(id); }
 function openRestock(id){
-  const d=DB.drinks.find(x=>x.id===id); const keg=isKeg(d);
+  const d=DB.drinks.find(x=>x.id===id); const keg=isKeg(d), goods=isGoods(d), unit=unitName(d);
+  const step=keg?'10':(goods?Math.min(1,1/Math.max(1,Ml(d))):'1');
   openSheet(`
     <h3 class="serif">Received stock · ${esc(d.name)}</h3>
-    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Tell Kaunta how much you just received — ${keg?'ml poured into the barrel':'bottles on the shelf'}. Expected stock and expected money recalculate automatically.</p>
-    <label class="lbl">${keg?'Ml received':'Bottles received'}</label>
-    <input id="rsQty" type="number" value="${keg?'1000':'1'}" min="${keg?'0':'1'}" step="${keg?'10':'1'}">
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">Tell Kaunta how much you just received — ${keg?'ml poured into the barrel':(goods?esc(unit)+' received (0.05 = 1 stick for a 20 pack)':'bottles on the shelf')}. Expected stock and expected money recalculate automatically.</p>
+    <label class="lbl">${keg?'Ml received':(goods?esc(unit)+' received':'Bottles received')}</label>
+    <input id="rsQty" type="number" value="${keg?'1000':'1'}" min="${keg?'0':(goods?'0':'1')}" step="${step}">
     <button class="btn primary" onclick="doRestock('${id}')">Log received stock</button>
   `);
 }
 function doRestock(id){
   const d=DB.drinks.find(x=>x.id===id); if(!d) return;
-  const keg=isKeg(d);
+  const keg=isKeg(d), goods=isGoods(d);
   const raw=Number(document.getElementById('rsQty').value);
-  const q=Math.max(keg?0:1,Math.round(raw||0));
-  if(!q) return toast('Enter an amount to receive');
+  if(!raw || raw<=0) return toast('Enter an amount to receive');
+  const q=keg?Math.max(0,Math.round(raw)):goods?Math.max(0.001,Math.round(raw*1000)/1000):Math.max(1,Math.round(raw));
   const t=Date.now();
   if(keg){ d.stockMl=(Number(d.stockMl)||0)+q; }
   else { d.stockMl=(roundLeft(d)||0)+q*Ml(d); }
   DB.restocks.push({drink:id,qty:q,t});
   save(); enqueue('restock',{drink:id,qty:q,t,keg:keg?1:0}); closeSheet();
-  toast(d.name+' +'+q+(keg?' ml':' bottles')); renderStock(); renderDash();
+  toast(d.name+' +'+q+(keg?' ml':(isGoods(d)?' '+unitName(d):' bottles'))); renderStock(); renderDash();
 }
 function openSplit(id){
   const d=DB.drinks.find(x=>x.id===id);
-  const keg=isKeg(d);
+  const keg=isKeg(d), goods=isGoods(d);
   window._splitCups=(d.cups||[]).map(c=>({...c}));
-  const mode = keg ? 'cups' : (d.shot_ml>0 && d.shot_price>0 ? (d.divisible?'both':'shots') : (d.divisible?'div':'full'));
+  const mode = keg ? 'cups' : (goods ? 'goods' : (d.shot_ml>0 && d.shot_price>0 ? (d.divisible?'both':'shots') : (d.divisible?'div':'full')));
   openSheet(`
     <h3 class="serif">Selling options · ${esc(d.name)}</h3>
-    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">${keg?'This is a keg: cups are poured from the barrel in ml, and each cup price sets the expected-money range per ml.':'How is this bottle sold? This sets the expected-money range per bottle.'}</p>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:16px">${keg?'This is a keg: cups are poured from the barrel in ml, and each cup price sets the expected-money range per ml.':goods?'Set the unit, pack size and prices. Expected money uses the cheapest and dearest way to sell one pack.':'How is this bottle sold? This sets the expected-money range per bottle.'}</p>
     <div class="seg" id="splitMode">
       <div class="chip" data-m="full">Full bottle only</div>
       <div class="chip" data-m="div">Divided (full / half / quarter)</div>
     <div class="chip" data-m="shots">Shots only</div>
     <div class="chip" data-m="both">Full bottle + shots</div>
     <div class="chip" data-m="cups">Custom cups</div>
+    <div class="chip" data-m="goods">Goods / retail item</div>
     </div>
 
     <div id="spDivWrap" class="${mode!=='div'&&mode!=='both'?'hidden':''}">
@@ -2338,6 +2399,20 @@ function openSplit(id){
       <p class="mini" style="margin-top:0">Each cup has its own ml size and price.</p>
     </div>
 
+    <div id="spGoodsWrap" class="${mode!=='goods'?'hidden':''}">
+      <div class="ctlbl">Unit name (piece / pack / plate / kg)</div><input id="spUnit" type="text" value="${esc(d.unit||'piece')}" placeholder="piece">
+      <div class="ctlbl">Price per unit (KES)</div><input id="spFull" type="number" value="${d.full||0}" placeholder="e.g. 300">
+      <div class="rowflex" style="margin-bottom:6px">
+        <input id="spPackSize" type="number" value="${Ml(d)||1}" placeholder="Units per pack" style="flex:1">
+        <input id="spSubUnit" type="text" value="${esc(d.sub_unit||'piece')}" placeholder="Sub-unit" style="flex:2">
+      </div>
+      <div class="rowflex" style="margin-bottom:6px">
+        <input id="spSubMl" type="number" value="${d.shot_ml||1}" placeholder="Units per sub" style="flex:1">
+        <input id="spSubPrice" type="number" value="${d.shot_price||0}" placeholder="Sub price" style="flex:1">
+      </div>
+      <p class="mini" style="margin-top:0">Cigarettes: 20 (pack), stick, 1 (per stick), stick price. Nyama choma: 1000 (kg), 250g plate, 250, plate price.</p>
+    </div>
+
     <button class="btn primary" onclick="saveSplit('${id}')">Save selling options</button>
   `);
   document.querySelectorAll('#splitMode .chip').forEach(c=>{
@@ -2348,6 +2423,7 @@ function openSplit(id){
       document.getElementById('spDivWrap').classList.toggle('hidden', m!=='div' && m!=='both');
       document.getElementById('spShotWrap').classList.toggle('hidden', m!=='shots' && m!=='both');
       document.getElementById('spCupsWrap').classList.toggle('hidden', m!=='cups');
+      document.getElementById('spGoodsWrap').classList.toggle('hidden', m!=='goods');
     };
   });
   document.getElementById('splitMode').querySelector(`[data-m="${mode}"]`).classList.add('sel');
@@ -2380,24 +2456,46 @@ function saveSplit(id){
   const mode=document.querySelector('#splitMode .chip.sel').dataset.m;
   const cups=mode==='cups'?(window._splitCups||[]):[];
   if(mode==='cups'&&!cups.length) return toast('Add at least one cup first');
-  const wasKeg=isKeg(d);
-  const mlOnHand=Math.max(0,Math.round(Number(d.stockMl)||0));
-  // Keep open in the unit of the new mode; stockMl is always physical ml.
+  const wasKeg=isKeg(d), wasGoods=isGoods(d);
+  const smallest=Math.max(0,Number(d.stockMl)||0);
+  const mlOnHand=Math.max(0,Math.round(smallest));
+  const goods=mode==='goods';
+  // Keep open in the unit of the new mode; stockMl is always the smallest units on hand.
   if(mode==='cups') d.open=mlOnHand;
-  else if(wasKeg) d.open=Math.round(mlOnHand/Math.max(1,Ml(d)));
+  else if(wasKeg && !goods) d.open=Math.round(mlOnHand/Math.max(1,Ml(d)));
+  else if(wasGoods && !goods) d.open=Math.round(smallest/Math.max(1,Ml(d)));
   d.keg=mode==='cups'?1:0;
   d.cups=cups;
   delete d.legacyKegUnits;
-  d.half=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spHalf').value)||0)):0;
-  d.quarter=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spQ').value)||0)):0;
-  d.shot_ml=(mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spShotMl').value)||0)):0;
-  d.shot_price=(mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spShotPr').value)||0)):0;
-  if((mode==='shots'||mode==='both')&&(!d.shot_ml||!d.shot_price)) return toast('Enter shot size and price per shot');
-  d.divisible=(mode==='div'||mode==='both'||mode==='cups')?1:0;
+  if(goods){
+    const unit=document.getElementById('spUnit').value.trim()||'piece';
+    const subUnit=document.getElementById('spSubUnit').value.trim()||'piece';
+    const packSize=Math.max(1,Math.round(parseFloat(document.getElementById('spPackSize').value)||1));
+    const subSize=Math.max(1,Math.round(parseFloat(document.getElementById('spSubMl').value)||1));
+    const subPrice=Math.max(0,Math.round(parseFloat(document.getElementById('spSubPrice').value)||0));
+    const price=Math.max(0,Math.round(parseFloat(document.getElementById('spFull').value)||0));
+    if(!price) return toast('Enter the price per '+unit);
+    if(subPrice>0&&subSize>packSize) return toast('Units per sub cannot exceed units per pack');
+    d.open=Math.max(0,Math.round((smallest/packSize)*1000)/1000);
+    d.goods=1; d.unit=unit; d.sub_unit=subUnit; d.size=packSize; d.full=price;
+    d.divisible=0; d.half=0; d.quarter=0;
+    d.shot_ml=subPrice>0?subSize:0; d.shot_price=subPrice;
+    d.stockMl=Math.round(d.open*packSize);
+  } else {
+    d.goods=0; d.unit=''; d.sub_unit='';
+    d.half=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spHalf').value)||0)):0;
+    d.quarter=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spQ').value)||0)):0;
+    d.shot_ml=(mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spShotMl').value)||0)):0;
+    d.shot_price=(mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('spShotPr').value)||0)):0;
+    if((mode==='shots'||mode==='both')&&(!d.shot_ml||!d.shot_price)) return toast('Enter shot size and price per shot');
+    d.divisible=(mode==='div'||mode==='both'||mode==='cups')?1:0;
+    d.stockMl=Math.round(d.open*Ml(d));
+  }
   save();
-  enqueue('set_drink_split',{drink:id,divisible:d.divisible,shot_ml:d.shot_ml,shot_price:d.shot_price,keg:d.keg,cups:d.cups});
+  enqueue('set_drink_split',{drink:id,divisible:d.divisible,shot_ml:d.shot_ml,shot_price:d.shot_price,keg:d.keg,cups:d.cups,
+    goods:d.goods,unit:d.unit,sub_unit:d.sub_unit,size:d.size,full:d.full});
   enqueue('set_open',{drink:id,open:d.open,keg:d.keg});
-  enqueue('set_price',{drink:id,k:'half',v:d.half}); enqueue('set_price',{drink:id,k:'quarter',v:d.quarter}); enqueue('set_price',{drink:id,k:'shot_price',v:d.shot_price});
+  enqueue('set_price',{drink:id,k:'full',v:d.full}); enqueue('set_price',{drink:id,k:'half',v:d.half}); enqueue('set_price',{drink:id,k:'quarter',v:d.quarter}); enqueue('set_price',{drink:id,k:'shot_price',v:d.shot_price});
   closeSheet(); toast('Selling options saved'); renderStock(); renderDash();
 }
 /* ---- shift ---- */
@@ -2525,7 +2623,7 @@ function setPrice(id,k,v){
 function openAddDrink(){
   window._ndCups=[];
   openSheet(`
-    <h3 class="serif">Add Drink</h3>
+    <h3 class="serif">Add drink / product</h3>
     <label class="lbl">Name</label><input id="ndName" placeholder="e.g. Senator Keg">
     <label class="lbl" id="ndSizeLbl">Bottle size (ml)</label><input id="ndSize" type="number" value="500" placeholder="500">
     <label class="lbl" id="ndMlLbl" style="display:none">Ml available now</label><input id="ndMlAvail" type="number" placeholder="ml in container" style="display:none">
@@ -2538,6 +2636,7 @@ function openAddDrink(){
       <div class="chip" data-m="shots">Shots only</div>
       <div class="chip" data-m="both">Full bottle + shots</div>
       <div class="chip" data-m="cups">Custom cups (keg-style)</div>
+      <div class="chip" data-m="goods">Goods / retail item</div>
     </div>
 
     <div id="ndDivWrap" class="hidden">
@@ -2569,14 +2668,33 @@ function openAddDrink(){
       <p class="mini" style="margin-top:0">Each cup has its own ml size and price. Example: keg → 1L mug (KES 320), 300ml cup (KES 110), 250ml cup (KES 90).</p>
     </div>
 
-    <button class="btn primary" onclick="addDrink()">Add drink</button>
+    <div id="ndGoodsWrap" class="hidden">
+      <div class="ctlbl">Goods details</div>
+      <div class="rowflex" style="margin-bottom:6px">
+        <input id="ndUnit" type="text" placeholder="Unit (piece / pack / plate / kg)" value="piece" style="flex:2">
+        <input id="ndPackSize" type="number" placeholder="Per pack" value="1" style="flex:1">
+      </div>
+      <div class="rowflex" style="margin-bottom:6px">
+        <input id="ndSubUnit" type="text" placeholder="Sub-unit (stick / 250g plate)" value="stick" style="flex:2">
+        <input id="ndSubMl" type="number" placeholder="Units per sub" value="1" style="flex:1">
+        <input id="ndSubPrice" type="number" placeholder="Sub price" style="flex:1">
+      </div>
+      <p class="mini" style="margin-top:0">Njugu, matches, lighters, plates: per pack 1. Cigarettes: 20, pack, stick, 1, stick price. Nyama choma: 1000, kg, 250g plate, 250, plate price.</p>
+    </div>
+
+    <button class="btn primary" onclick="addDrink()">Add drink / product</button>
   `);
   document.querySelectorAll('#sellMode .chip').forEach(c=>{
     c.onclick=()=>{
       document.querySelectorAll('#sellMode .chip').forEach(x=>x.classList.remove('sel'));
       c.classList.add('sel');
       const m=c.dataset.m;
-      const cupsMode = m==='cups';
+      const cupsMode=m==='cups', goodsMode=m==='goods';
+      const sizeEl=document.getElementById('ndSize');
+      if(goodsMode){ if(sizeEl.dataset.bottle===undefined) sizeEl.dataset.bottle=sizeEl.value||'250'; sizeEl.value=1; }
+      else if(sizeEl.dataset.bottle!==undefined){ sizeEl.value=sizeEl.dataset.bottle||'250'; delete sizeEl.dataset.bottle; }
+      document.getElementById('ndSizeLbl').textContent = goodsMode?'Units per pack (1 for single item)':'Bottle size (ml)';
+      document.getElementById('ndFullLbl').textContent = goodsMode?'Price per pack / piece (KES)':'Price · Full bottle (KES)';
       document.getElementById('ndSizeLbl').style.display = cupsMode?'none':'';
       document.getElementById('ndSize').style.display = cupsMode?'none':'';
       document.getElementById('ndFullLbl').style.display = cupsMode?'none':'';
@@ -2586,6 +2704,7 @@ function openAddDrink(){
       document.getElementById('ndDivWrap').classList.toggle('hidden', m!=='div' && m!=='both');
       document.getElementById('ndShotWrap').classList.toggle('hidden', m!=='shots' && m!=='both');
       document.getElementById('ndCupsWrap').classList.toggle('hidden', m!=='cups');
+      document.getElementById('ndGoodsWrap').classList.toggle('hidden', !goodsMode);
     };
   });
   renderCupList();
@@ -2613,6 +2732,7 @@ function addDrink(){
   const id='d'+Date.now();
   const mode=document.querySelector('#sellMode .chip.sel').dataset.m;
   const cups=(mode==='cups')?(window._ndCups||[]):[];
+  const goods=mode==='goods';
   if(mode==='cups'&&!cups.length) return toast('Add at least one cup for a keg');
   let size, stockMl, full;
   if(mode==='cups'){
@@ -2621,6 +2741,10 @@ function addDrink(){
     size=cups.length? Math.max(...cups.map(c=>Number(c.ml)||0)) : 500;
     stockMl=mlAvail;
     full=0;
+  } else if(goods){
+    size=Math.max(1,Math.round(parseFloat(document.getElementById('ndSize').value)||1));
+    full=Math.max(0,Math.round(parseFloat(document.getElementById('ndFull').value)||0));
+    stockMl=0;
   } else {
     size=Math.max(50,parseFloat(document.getElementById('ndSize').value)||250);
     full=mode==='shots'?0:Math.max(0,Math.round(parseFloat(document.getElementById('ndFull').value)||0));
@@ -2628,17 +2752,23 @@ function addDrink(){
   }
   const half=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('ndHalf').value)||0)):0;
   const quarter=(mode==='div'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('ndQ').value)||0)):0;
-  const shotMl=(mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('ndShotMl').value)||0)):0;
-  const shotPrice=(mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('ndShotPr').value)||0)):0;
-  if(mode!=='cups'&&mode!=='shots'&&!full) return toast('Enter the full bottle price');
+  const subSize=goods?Math.max(1,Math.round(parseFloat(document.getElementById('ndSubMl').value)||1)):0;
+  const subPrice=goods?Math.max(0,Math.round(parseFloat(document.getElementById('ndSubPrice').value)||0)):0;
+  const shotMl=goods?(subPrice>0?subSize:0):((mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('ndShotMl').value)||0)):0);
+  const shotPrice=goods?subPrice:((mode==='shots'||mode==='both')?Math.max(0,Math.round(parseFloat(document.getElementById('ndShotPr').value)||0)):0);
+  const unit=goods?(document.getElementById('ndUnit').value.trim()||'piece'):'';
+  const subUnit=goods?(document.getElementById('ndSubUnit').value.trim()||'piece'):'';
+  if(goods&&!full) return toast('Enter the price per ' + unit);
+  if(goods&&subPrice>0&&subSize>size) return toast('Units per sub cannot exceed units per pack');
+  if(!goods&&mode!=='cups'&&mode!=='shots'&&!full) return toast('Enter the full bottle price');
   if((mode==='shots'||mode==='both')&&(!shotMl||!shotPrice)) return toast('Enter shot size and price per shot');
   const keg=mode==='cups'?1:0;
   const divisible=(mode==='div'||mode==='both'||mode==='cups')?1:0;
   const dd={id,name:n,size,full,half,quarter,open:keg?stockMl:0,soldMl:0,divisible,shot_ml:shotMl,shot_price:shotPrice,stockMl,keg,cups,
-    barrels:0,barrelMl:50000};
+    goods:goods?1:0,unit,sub_unit:subUnit,barrels:0,barrelMl:50000};
   DB.drinks.push(dd);
   save(); enqueue('add_drink',{id,name:n,size,full,half,quarter,divisible,shot_ml:shotMl,shot_price:shotPrice,cups,stockMl,open:dd.open,keg,
-    barrels:dd.barrels,barrelMl:dd.barrelMl});
+    goods:dd.goods,unit:dd.unit,sub_unit:dd.sub_unit,barrels:dd.barrels,barrelMl:dd.barrelMl});
   closeSheet(); toast(n+' added'); renderStock(); renderSell();
 }
 function newDay(){

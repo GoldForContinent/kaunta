@@ -1,8 +1,10 @@
 // Sync: idempotent, seq-based two-way replication for a bar's ledger.
 //
-// Stock model (migration #4, kegs in #7, barrels in #8):
-//   drinks.stockMl  = ml physically on hand right now. The source of truth.
+// Stock model (migration #4, kegs in #7, barrels in #8, goods in #9):
+//   drinks.stockMl  = smallest units physically on hand. The source of truth.
 //   Ordinary bottles: restock/set_open/stocktake count bottles and multiply by size.
+//   Goods (drinks.goods = 1): stockMl is sticks/pieces/grams; size is units per
+//     pack, shot_ml is units per sub-unit portion (1 stick, 250 g, etc.).
 //   Kegs (drinks.keg = 1): one active barrel is poured by custom cups; sealed
 //     barrels sit in reserve. stockMl = active ml + barrels * barrelMl.
 //     open is the last counted TOTAL ml baseline; restocks and tap waste are logged
@@ -48,6 +50,8 @@ function cupsOf(d) {
 function isKeg(d) {
   return !!(d && (+d.keg || (!d.keg && cupsOf(d).length)));
 }
+function isGoods(d) { return !!(d && +d.goods); }
+function goodsHasSub(d) { return isGoods(d) && (+d.shot_ml || 0) > 0 && (+d.shot_price || 0) > 0; }
 function cupRates(d) {
   return cupsOf(d).map(c => (c && +c.ml > 0 && +c.price > 0) ? (+c.price) / (+c.ml) : 0).filter(r => r > 0);
 }
@@ -57,6 +61,11 @@ function pourMlOf(info, size, qty) {
   if (size && size.startsWith('cup')) {
     const cup = cupsOf(info)[parseInt(size.slice(3), 10)];
     return cup ? Math.round((+cup.ml || 0) * n) : 0;
+  }
+  if (isGoods(info)) {
+    if (size === 'unit') return Math.round((+info.size || 1) * n);
+    if (size === 'sub') return Math.round((+info.shot_ml || 1) * n);
+    return 0;
   }
   // Kegs only pour by cup. Unknown sizes never silently burn stock.
   if (isKeg(info)) return 0;
@@ -81,9 +90,14 @@ function serverBottleRates(d) {
   return rates.filter(r => r > 0);
 }
 function serverBottleMax(d) { const r = serverBottleRates(d); return r.length ? Math.max(...r) : 0; }
+function serverGoodsRates(d) {
+  const rates = [Math.max(0, +d.full || 0)];
+  if (goodsHasSub(d)) rates.push(Math.floor(Math.max(1, +d.size || 1) / Math.max(1, +d.shot_ml)) * (+d.shot_price || 0));
+  return rates.filter(r => r > 0);
+}
 function serverBand(d, units) {
   const n = Math.max(0, Number(units) || 0);
-  const rates = isKeg(d) ? cupRates(d) : serverBottleRates(d);
+  const rates = isKeg(d) ? cupRates(d) : (isGoods(d) ? serverGoodsRates(d) : serverBottleRates(d));
   if (!rates.length) return { min: 0, max: 0 };
   const min = Math.round(n * Math.min(...rates));
   const max = Math.round(n * Math.max(...rates));
@@ -144,7 +158,7 @@ export function applyStatements(barId, op, now, sizeOf) {
       if (op.drink) {
         const info = sizeOf(op.drink);
         const keg = kegUnitsOf(info, op);
-        const open = Math.max(0, Math.round(op.open || 0));
+        const open = isGoods(info) ? Math.max(0, Math.round((op.open || 0) * 1000) / 1000) : Math.max(0, Math.round(op.open || 0));
         q('UPDATE drinks SET open = ?, stockMl = ? WHERE id = ? AND bar_id = ?',
           open, keg ? open : Math.round(open * ((info && info.size) || 0)), String(op.drink), barId);
       }
@@ -161,7 +175,7 @@ export function applyStatements(barId, op, now, sizeOf) {
       const open = keg ? Math.max(0, Math.round(Number(op.open) || stock)) : 0;
       const barrels = keg ? Math.max(0, Math.round(op.barrels || 0)) : 0;
       const barrelMl = Math.max(1000, Math.round(op.barrelMl || 50000));
-      q('INSERT OR IGNORE INTO drinks (id, bar_id, name, size, full, half, quarter, open, soldMl, divisible, shot_ml, shot_price, cups, stockMl, keg, barrels, barrelMl) VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)',
+      q('INSERT OR IGNORE INTO drinks (id, bar_id, name, size, full, half, quarter, open, soldMl, divisible, shot_ml, shot_price, cups, stockMl, keg, barrels, barrelMl, goods, unit, sub_unit) VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?)',
         String(op.id || 'd' + now).slice(0, 64), barId, String(op.name || 'Drink').slice(0, 60),
         Math.max(1, parseFloat(op.size) || 250),
         Math.max(0, Math.round(op.full || 0)), Math.max(0, Math.round(op.half || 0)), Math.max(0, Math.round(op.quarter || 0)),
@@ -169,7 +183,8 @@ export function applyStatements(barId, op, now, sizeOf) {
         op.divisible ? 1 : 0,
         Math.max(0, parseFloat(op.shot_ml) || 0), Math.max(0, Math.round(op.shot_price || 0)),
         String(op.cups !== undefined ? JSON.stringify(op.cups) : '[]'),
-        stock, keg, barrels, barrelMl);
+        stock, keg, barrels, barrelMl,
+        op.goods ? 1 : 0, String(op.unit || '').slice(0, 24), String(op.sub_unit || '').slice(0, 24));
       break;
     }
     case 'delete_drink': {
@@ -187,7 +202,10 @@ export function applyStatements(barId, op, now, sizeOf) {
     case 'restock': {
       const info = sizeOf(op.drink);
       const keg = kegUnitsOf(info, op);
-      const qty = Math.max(keg ? 0 : 1, Math.round(op.qty || 1));
+      const goods = isGoods(info);
+      const qty = keg ? Math.max(0, Math.round(op.qty || 0))
+        : goods ? Math.max(0.001, Math.round((op.qty || 0) * 1000) / 1000)
+          : Math.max(1, Math.round(op.qty || 1));
       const t = Math.round(op.t || now);
       q('INSERT INTO restocks (id, bar_id, drink, qty, t) VALUES (?,?,?,?,?)',
         String(op.id || 'r' + t + (op.drink || '')).slice(0, 64), barId, String(op.drink || ''), qty, t);
@@ -259,9 +277,14 @@ export function applyStatements(barId, op, now, sizeOf) {
         const cups = hasCups ? JSON.stringify(op.cups) : null;
         // Legacy ops introduced cups before the keg flag existed.
         const keg = op.keg === undefined ? (hasCups && op.cups.length ? 1 : null) : (op.keg ? 1 : 0);
-        q('UPDATE drinks SET divisible = ?, shot_ml = ?, shot_price = ?, cups = COALESCE(?, cups), keg = COALESCE(?, keg) WHERE id = ? AND bar_id = ?',
-          op.divisible ? 1 : 0, Math.max(0, parseFloat(op.shot_ml) || 0), Math.max(0, Math.round(op.shot_price || 0)),
-          cups, keg, String(op.drink), barId);
+        const sets = ['divisible = ?', 'shot_ml = ?', 'shot_price = ?', 'cups = COALESCE(?, cups)', 'keg = COALESCE(?, keg)'];
+        const vals = [op.divisible ? 1 : 0, Math.max(0, parseFloat(op.shot_ml) || 0), Math.max(0, Math.round(op.shot_price || 0)), cups, keg];
+        if (op.goods !== undefined) { sets.push('goods = ?'); vals.push(op.goods ? 1 : 0); }
+        if (op.unit !== undefined) { sets.push('unit = ?'); vals.push(String(op.unit || '').slice(0, 24)); }
+        if (op.sub_unit !== undefined) { sets.push('sub_unit = ?'); vals.push(String(op.sub_unit || '').slice(0, 24)); }
+        if (op.size !== undefined) { sets.push('size = ?'); vals.push(Math.max(1, parseFloat(op.size) || 1)); }
+        if (op.full !== undefined) { sets.push('full = ?'); vals.push(Math.max(0, Math.round(op.full || 0))); }
+        q(`UPDATE drinks SET ${sets.join(', ')} WHERE id = ? AND bar_id = ?`, ...vals, String(op.drink), barId);
       }
       break;
     }
@@ -306,8 +329,8 @@ async function buildSizeOf(DB, barId, ops) {
   const ids = [...need].filter(Boolean);
   if (ids.length) {
     const ph = ids.map(() => '?').join(',');
-    const rows = await DB.prepare(`SELECT id, size, shot_ml, cups, keg FROM drinks WHERE bar_id = ? AND id IN (${ph})`).bind(barId, ...ids).all();
-    rows.results.forEach((r) => dbSizes.set(r.id, { size: r.size, shot_ml: r.shot_ml || 0, cups: r.cups || '[]', keg: r.keg || 0 }));
+    const rows = await DB.prepare(`SELECT id, size, shot_ml, cups, keg, goods FROM drinks WHERE bar_id = ? AND id IN (${ph})`).bind(barId, ...ids).all();
+    rows.results.forEach((r) => dbSizes.set(r.id, { size: r.size, shot_ml: r.shot_ml || 0, cups: r.cups || '[]', keg: r.keg || 0, goods: r.goods || 0 }));
   }
   const kegFromOp = (op) => {
     if (op.keg !== undefined) return op.keg ? 1 : 0;
@@ -316,16 +339,17 @@ async function buildSizeOf(DB, barId, ops) {
   const batchSizes = new Map();
   for (const op of ops) {
     if (op.type === 'add_drink' && op.id) batchSizes.set(String(op.id), {
-      size: parseFloat(op.size) || 250, shot_ml: parseFloat(op.shot_ml) || 0,
-      cups: op.cups || [], keg: kegFromOp(op),
+      size: parseFloat(op.size) || (op.goods ? 1 : 250), shot_ml: parseFloat(op.shot_ml) || 0,
+      cups: op.cups || [], keg: kegFromOp(op), goods: op.goods ? 1 : 0,
     });
     const splitId = op.type === 'set_drink_split' ? (op.id || op.drink) : null;
     if (splitId) {
       const prev = batchSizes.get(String(splitId)) || dbSizes.get(String(splitId)) || { size: 0 };
       batchSizes.set(String(splitId), {
-        size: prev.size || 250, shot_ml: parseFloat(op.shot_ml) || 0,
+        size: parseFloat(op.size) || prev.size || (op.goods ? 1 : 250), shot_ml: parseFloat(op.shot_ml) || 0,
         cups: Array.isArray(op.cups) ? op.cups : (prev.cups || []),
         keg: op.keg !== undefined ? kegFromOp(op) : (Array.isArray(op.cups) && op.cups.length ? 1 : (prev.keg || 0)),
+        goods: op.goods !== undefined ? (op.goods ? 1 : 0) : (prev.goods || 0),
       });
     }
   }
@@ -361,23 +385,24 @@ async function buildStocktake(DB, barId, op, now) {
   const setShelf = !!op.set_shelf;
   for (const d of drinks) {
     if (counts[d.id] == null) continue;
-    const keg = isKeg(d);
+    const keg = isKeg(d), goods = isGoods(d);
+    const dp = goods ? 1000 : 100;
     const cNow = keg ? Math.max(0, Math.round(Number(counts[d.id]) || 0))
-      : Math.max(0, Math.round((Number(counts[d.id]) || 0) * 100) / 100); // bottles; quarter steps allowed
+      : Math.max(0, Math.round((Number(counts[d.id]) || 0) * dp) / dp); // packs with sub-units allowed
     const prevC = prevCounts[d.id] != null ? Number(prevCounts[d.id]) : null;
-    const baseC = prevC != null ? prevC : Math.max(0, Math.round(+d.open || 0));
+    const baseC = prevC != null ? prevC : Math.max(0, Math.round((+d.open || 0) * dp) / dp);
     const restockC = restockRows.filter((r) => r.drink === d.id).reduce((a, r) => a + (r.qty || 0), 0);
     const wasteC = wasteRows.filter((w) => w.drink === d.id).reduce((a, w) => a + (w.qty || 0), 0);
     const consumed = Math.max(0, baseC + restockC - wasteC - cNow);
-    const size = Math.max(1, parseFloat(d.size) || 250);
+    const size = Math.max(1, parseFloat(d.size) || (goods ? 1 : 250));
     const band = serverBand(d, consumed);
     const ledger = ledgerBy[d.id] || 0;
     Tmin += band.min; Tmax += band.max; Tbook += ledger;
     items[d.id] = {
-      count: cNow, consumed_bottles: keg ? 0 : Math.round(consumed * 100) / 100,
-      consumed_ml: keg ? consumed : 0, size, keg: keg ? 1 : 0, min: band.min, max: band.max, ledger,
+      count: cNow, consumed_bottles: keg ? 0 : Math.round(consumed * dp) / dp,
+      consumed_ml: keg ? consumed : 0, size, keg: keg ? 1 : 0, goods: goods ? 1 : 0, min: band.min, max: band.max, ledger,
     };
-    const nextOpen = keg ? cNow : Math.round(cNow);
+    const nextOpen = keg ? cNow : goods ? cNow : Math.round(cNow);
     const nextMl = keg ? cNow : Math.round(cNow * size);
     // A keg stock-take counts TOTAL ml (active barrel + sealed barrels). Derive the
     // reserve from full-barrel multiples so the next tap knows what is in line.

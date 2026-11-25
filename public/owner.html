@@ -264,6 +264,16 @@ const dstr=ms=>new Date(ms).toLocaleDateString('en-KE',{day:'numeric',month:'sho
 /* A keg is measured in ml and sold by cups; ordinary drinks are counted in bottles. */
 const cupList=d=>{ try{ const v=typeof d.cups==='string'?JSON.parse(d.cups||'[]'):d.cups; return Array.isArray(v)?v:[]; }catch(e){ return []; } };
 const isKeg=d=>!!d && !!( +d.keg || (!d.keg && cupList(d).length) );
+const isGoods=d=>!!d && !!d.goods;
+const goodsHasSub=d=>isGoods(d) && (+d.shot_ml||0)>0 && (+d.shot_price||0)>0;
+const unitName=d=>(isGoods(d)&&d.unit)||'unit';
+const subName=d=>(isGoods(d)&&d.sub_unit)||'piece';
+function sizeLabel(d,size){
+  if(!d) return cap(size||'Full');
+  if(size&&size.startsWith('cup')){ const cup=cupList(d)[parseInt(size.slice(3))]; if(cup) return cup.label; }
+  if(isGoods(d)){ if(size==='unit') return unitName(d); if(size==='sub') return subName(d); }
+  return cap(size||'Full');
+}
 const cupRates=d=>cupList(d).map(c=>c&&+c.ml>0&&+c.price>0?(+c.price)/(+c.ml):0).filter(r=>r>0);
 /* expected-money band: cheapest / dearest plausible price per bottle or ml */
 function bottleRates(d){
@@ -278,9 +288,14 @@ function bottleRates(d){
   return rates.filter(r=>r>0);
 }
 function bottleMax(d){ const r=bottleRates(d); return r.length?Math.max(...r):0; }
+function goodsRates(d){
+  const rates=[Math.max(0,+d.full||0)];
+  if(goodsHasSub(d)) rates.push(Math.floor(Math.max(1,+d.size||1)/Math.max(1,+d.shot_ml))*(+d.shot_price||0));
+  return rates.filter(r=>r>0);
+}
 function drinkBand(d,units){
   const n=Math.max(0,Number(units)||0);
-  const rates=isKeg(d)?cupRates(d):bottleRates(d);
+  const rates=isKeg(d)?cupRates(d):(isGoods(d)?goodsRates(d):bottleRates(d));
   if(!rates.length) return {min:0,max:0};
   const min=Math.round(n*Math.min(...rates));
   const max=Math.round(n*Math.max(...rates));
@@ -439,15 +454,16 @@ function renderStock(d){
   const el=document.getElementById('stock'); el.innerHTML='';
   if(!d.drinks||!d.drinks.length){ el.innerHTML='<div class="empty">No drinks yet — add them from the app.</div>'; return; }
   d.drinks.forEach(x=>{
-    const keg=isKeg(x);
+    const keg=isKeg(x), goods=isGoods(x);
     const stMl=(+x.stockMl!==undefined&&+x.stockMl!==null)? +x.stockMl : (+x.open||0)*(+x.size||0);
     const total=stMl+(+x.soldMl||0), left=Math.max(0,stMl);
     const bm=Math.max(1,+x.barrelMl||50000), barrels=keg?Math.max(0,+x.barrels||0):0;
     const active=keg?Math.max(0,left-barrels*bm):left;
     const pct=total>0?Math.max(0,Math.min(100,left/Math.max(1,total)*100)):0;
     const cls=active<=0&&keg?'red':(pct<25?'grn':'');
-    const right=keg?'keg':((+x.size)>0?(left/(+x.size||1)).toFixed(1)+' bots':'0');
+    const right=keg?'keg':goods?(left/Math.max(1,+x.size||1)).toFixed(2)+' '+esc(unitName(x)):((+x.size)>0?(left/(+x.size||1)).toFixed(1)+' bots':'0');
     const sub=keg?active.toFixed(0)+' ml active'+(barrels?' · '+barrels+' full barrel'+(barrels===1?'':'s')+' ('+(barrels*bm).toLocaleString('en-KE')+' ml)':'')+' · '+left.toFixed(0)+' ml total'
+      :goods?(goodsHasSub(x)?Math.floor(left/Math.max(1,+x.shot_ml||1))+' '+esc(x.sub_unit||'pieces')+' on hand · ':'')+(left/Math.max(1,+x.size||1)).toFixed(2)+' '+esc(unitName(x))
       :left.toFixed(0)+' / '+total.toFixed(0)+' ml left';
     const row=document.createElement('div');
     row.style.marginBottom='12px';
@@ -468,25 +484,28 @@ function renderStocktake(d){
   const wasteQ=id=>(d.waste||[]).filter(w=>w.drink===id && w.t>takeSince).reduce((a,w)=>a+w.qty,0);
   let Tmin=0,Tmax=0,Tbook=0;
   const rows=d.drinks.map(x=>{
-    const keg=isKeg(x);
+    const keg=isKeg(x), goods=isGoods(x), unit=unitName(x);
     const size=+x.size||1;
     const stMl=(+x.stockMl!==undefined&&+x.stockMl!==null)? +x.stockMl : (+x.open||0)*size;
-    if(TAKE_COUNTS[x.id]===undefined) TAKE_COUNTS[x.id]=keg?Math.max(0,Math.round(stMl)):Math.max(0,Math.round(stMl/size*100)/100);
+    const dp=goods?1000:100;
+    if(TAKE_COUNTS[x.id]===undefined) TAKE_COUNTS[x.id]=keg?Math.max(0,Math.round(stMl)):Math.max(0,Math.round(stMl/size*dp)/dp);
     const c=TAKE_COUNTS[x.id];
-    const base=(prevC[x.id]!=null)? Math.max(0,Math.round(Number(prevC[x.id])*100)/100) : Math.max(0,Math.round(+x.open||0));
-    const has=base+restockQ(x.id)-(keg?wasteQ(x.id):0);
+    const base=(prevC[x.id]!=null)? Math.max(0,Math.round(Number(prevC[x.id])*dp)/dp) : Math.max(0,Math.round((+x.open||0)*dp)/dp);
+    const has=base+restockQ(x.id)-wasteQ(x.id);
     const sold=Math.max(0,has-c);
     const band=drinkBand(x,sold);
     const book=agg[x.id]||0;
     Tmin+=band.min; Tmax+=band.max; Tbook+=book;
     const flag=(book<band.min-1)?' · <span style="color:var(--ember)">LOW</span>':(book>band.max+1)?' · <span style="color:var(--ember)">HIGH</span>':'';
-    const soldLine=keg?('sold '+sold.toFixed(0)+' of '+has.toFixed(0)+' ml'+(wasteQ(x.id)?' · '+wasteQ(x.id).toFixed(0)+' ml wasted/tapped off':'')):('sold '+sold.toFixed(1)+' of '+has+' opened');
+    const soldLine=keg?('sold '+sold.toFixed(0)+' of '+has.toFixed(0)+' ml'+(wasteQ(x.id)?' · '+wasteQ(x.id).toFixed(0)+' ml wasted/tapped off':''))
+      :goods?('sold '+sold.toFixed(1)+' of '+has+' '+esc(unit))
+      :('sold '+sold.toFixed(1)+' of '+has+' opened');
     return '<div class="row" style="align-items:flex-start">'+
-      '<div class="l"><b>'+esc(x.name)+(keg?' <span class="tag half">keg</span>':'')+'</b>'+
-        '<span>'+soldLine+(restockQ(x.id)?(' (+'+restockQ(x.id)+(keg?' ml':' refill')+')'):'')+'</span></div>'+
+      '<div class="l"><b>'+esc(x.name)+(keg?' <span class="tag half">keg</span>':goods?' <span class="tag half">goods</span>':'')+'</b>'+
+        '<span>'+soldLine+(restockQ(x.id)?(' (+'+restockQ(x.id)+(keg?' ml':(goods?' '+esc(unit):' refill'))+')'):'')+'</span></div>'+
       '<div class="r"><div style="display:flex;align-items:center;gap:6px">'+
         '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="takeAdj(\''+x.id+'\',-1)">−</button>'+
-        '<input type="number" step="'+(keg?'100':'0.25')+'" value="'+c+'" onchange="takeSet(\''+x.id+'\',this.value)" style="width:72px;text-align:center;padding:8px;margin:0" title="'+(keg?'ml of drink in the barrel now':'count now on shelf (halves/quarters allowed)')+'">'+
+        '<input type="number" step="'+(keg?'100':(goods?Math.min(0.25,1/Math.max(1,size)):'0.25'))+'" value="'+c+'" onchange="takeSet(\''+x.id+'\',this.value)" style="width:72px;text-align:center;padding:8px;margin:0" title="'+(keg?'ml of drink in the barrel now':(goods?'count now in '+esc(unit):'count now on shelf (halves/quarters allowed)'))+'">'+
         '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="takeAdj(\''+x.id+'\',1)">+</button>'+
         '<button class="btn small ghost" style="padding:7px 9px;color:var(--ember)" title="Delete this drink" onclick="delDrinkOwner(\''+x.id+'\')">✕</button>'+
       '</div>'+
@@ -499,7 +518,7 @@ function renderStocktake(d){
     const when=(new Date(st.t)).toLocaleDateString('en-KE',{day:'numeric',month:'short'})+' '+hhmm(st.t);
     hist+='<div class="row" style="padding:5px 0"><div class="l"><b>'+when+'</b><span>'+esc(st.note||(st.by_name||'stock-take'))+'</span></div><div class="r"><b class="money" style="font-size:13px">'+kes(t.min||0)+' – '+kes(t.max||0)+'</b><br><span class="mini" style="margin:0">ledger '+kes(t.ledger||0)+'</span></div></div>';
   });
-  el.innerHTML='<div class="subrow" style="border:none;font-size:11px;color:var(--dim);padding-bottom:4px">Set what is on hand now — total ml for kegs (active barrel + sealed barrels), bottles elsewhere. The expected money band is what the consumed stock should have earned.</div>'+rows+
+  el.innerHTML='<div class="subrow" style="border:none;font-size:11px;color:var(--dim);padding-bottom:4px">Set what is on hand now — total ml for kegs, bottles for drinks, packs/pieces for goods. The expected money band is what the consumed stock should have earned.</div>'+rows+
     '<div class="subrow" style="margin-top:8px"><span>Expected since last take</span><b class="money">'+kes(Tmin)+' – '+kes(Tmax)+'</b></div>'+
     '<div class="subrow"><span>Recorded on ledger</span><b '+(wind?'style="color:var(--ember)"':'')+'>'+kes(Tbook)+'</b></div>'+
     '<label class="row" style="border:none;align-items:center;gap:10px;margin:10px 0 0;cursor:pointer"><input type="checkbox" id="tkShelfOwner" checked style="width:auto;margin:0;flex:none"><span class="mini" style="margin:0">Lock the shelf to these amounts — starts a fresh poured baseline from this count.</span></label>'+
@@ -518,12 +537,13 @@ function saveTakeOwner(){
 }
 function takeStep(id){
   const d=(LAST_SUMMARY&&LAST_SUMMARY.drinks||[]).find(x=>x.id===id);
-  return isKeg(d)?100:1; // kegs are adjusted in 100 ml steps
+  return isKeg(d)?100:(d&&isGoods(d)?Math.min(0.25,1/Math.max(1,+d.size||1)):1); // kegs: ml, goods: pack steps
 }
-function takeAdj(id,di){ if(TAKE_COUNTS[id]===undefined) TAKE_COUNTS[id]=0; TAKE_COUNTS[id]=Math.max(0,(TAKE_COUNTS[id]||0)+di*takeStep(id)); if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY); }
+function takeAdj(id,di){ if(TAKE_COUNTS[id]===undefined) TAKE_COUNTS[id]=0; TAKE_COUNTS[id]=Math.max(0,Math.round(((TAKE_COUNTS[id]||0)+di*takeStep(id))*1000)/1000); if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY); }
 function takeSet(id,v){
   const raw=parseFloat(v)||0;
-  const n=takeStep(id)===100?Math.max(0,Math.round(raw)):Math.round(raw*100)/100;
+  const step=takeStep(id);
+  const n=step===100?Math.max(0,Math.round(raw)):Math.round(raw*(step<1?1000:100))/(step<1?1000:100);
   if(!isFinite(n)||n<0) { renderStocktake(LAST_SUMMARY); return; }
   TAKE_COUNTS[id]=n; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY);
 }
@@ -613,7 +633,7 @@ function auditText(it){
   const dmap={}; (LAST_SUMMARY&&LAST_SUMMARY.drinks||[]).forEach(x=>{ dmap[x.id]=x; });
   const dobj=dmap[p.drink];
   const drink=dobj?dobj.name:'a drink';
-  const unit=(p.keg!==undefined?!!p.keg:isKeg(dobj))?' ml':' bottles';
+  const unit=(p.keg!==undefined?!!p.keg:isKeg(dobj))?' ml':(isGoods(dobj)?' '+unitName(dobj):' bottles');
   switch(it.type){
     case 'sale': return 'Sold '+drink+(p.qty>1?' ×'+p.qty:'')+' · '+kes(p.price)+(p.pay?' · '+p.pay:'');
     case 'return_sale': return 'Returned '+drink+(p.qty>1?' ×'+p.qty:'')+' · '+kes(Math.abs(p.price||0))+(p.pay?' · '+p.pay:'');
@@ -702,11 +722,7 @@ function renderFeed(feed){
     const ret=!!s.isReturn || (s.price||0)<0;
     const amt=Math.abs(s.price||0);
     const d=dmap[s.drink];
-    let sizeLbl=cap(s.size||'Full');
-    if(s.size&&s.size.startsWith('cup')&&d){
-      const cup=cupList(d)[parseInt(s.size.slice(3))];
-      if(cup) sizeLbl=cup.label;
-    }
+    const sizeLbl=sizeLabel(d,s.size);
     return '<div class="row"><div class="l"><b>'+esc(s.name)+' '+(ret?'<span class="tag return">Return</span>':'')+' <span class="tag '+(s.size||'full')+'">'+esc(sizeLbl)+'</span>'+(s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':'')+'</b><span>'+lbl+' · '+(s.staff||s.who||'over counter')+'</span></div>'+
       '<div class="r"><b class="money'+(ret?' red':'')+'" style="font-size:15px">'+kes(amt)+'</b><br><span class="tag '+s.pay+'">'+({cash:'Cash',mpesa:'M-Pesa',deni:'Debt'}[s.pay]||s.pay)+'</span></div></div>';
   }).join('');
