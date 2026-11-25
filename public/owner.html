@@ -267,12 +267,14 @@ const isKeg=d=>!!d && !!( +d.keg || (!d.keg && cupList(d).length) );
 const cupRates=d=>cupList(d).map(c=>c&&+c.ml>0&&+c.price>0?(+c.price)/(+c.ml):0).filter(r=>r>0);
 /* expected-money band: cheapest / dearest plausible price per bottle or ml */
 function bottleRates(d){
-  const rates=[Math.max(0,+d.full||0)];
+  const hasShots=(+d.shot_ml||0)>0 && (+d.shot_price||0)>0;
+  const rates=[];
+  if(!hasShots || +d.divisible) rates.push(Math.max(0,+d.full||0));
   if(+d.divisible){
     if(+d.half>0) rates.push(2*(+d.half));
     if(+d.quarter>0) rates.push(4*(+d.quarter));
-    if((+d.shot_ml||0)>0&&(+d.shot_price||0)>0) rates.push(Math.max(0,Math.floor((+d.size||0)/(+d.shot_ml||1))*(+d.shot_price||0)));
   }
+  if(hasShots) rates.push(Math.max(0,Math.floor((+d.size||0)/(+d.shot_ml||1))*(+d.shot_price||0)));
   return rates.filter(r=>r>0);
 }
 function bottleMax(d){ const r=bottleRates(d); return r.length?Math.max(...r):0; }

@@ -17,7 +17,7 @@
 import { json, subState, TRIAL } from './util.js';
 
 const FRACT = { full: 1, half: 0.5, quarter: 0.25 };
-const PRICE_KEYS = new Set(['full', 'half', 'quarter', 'shot_price']);
+const PRICE_KEYS = new Set(['full', 'half', 'quarter', 'shot_price', 'shot_ml']);
 
 // Loads (creating if missing) the bar's subscription, returns computed state.
 export async function subOf(DB, barId) {
@@ -70,12 +70,14 @@ function kegUnitsOf(info, op) {
 
 // ---- expected-money band (mirrors the client's drinkBand/bottleRates) ----
 function serverBottleRates(d) {
-  const rates = [Math.max(0, +d.full || 0)];
+  const hasShots = (+d.shot_ml || 0) > 0 && (+d.shot_price || 0) > 0;
+  const rates = [];
+  if (!hasShots || +d.divisible) rates.push(Math.max(0, +d.full || 0));
   if (+d.divisible) {
     if (+d.half > 0) rates.push(2 * (+d.half));
     if (+d.quarter > 0) rates.push(4 * (+d.quarter));
-    if ((+d.shot_ml || 0) > 0 && (+d.shot_price || 0) > 0) rates.push(Math.max(0, Math.floor((+d.size || 0) / (+d.shot_ml || 1)) * (+d.shot_price || 0)));
   }
+  if (hasShots) rates.push(Math.max(0, Math.floor((+d.size || 0) / (+d.shot_ml || 0)) * (+d.shot_price || 0)));
   return rates.filter(r => r > 0);
 }
 function serverBottleMax(d) { const r = serverBottleRates(d); return r.length ? Math.max(...r) : 0; }
