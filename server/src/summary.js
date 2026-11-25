@@ -12,7 +12,7 @@ export async function summaryHandler({ DB }, ctx, q) {
 
   const sub = await subOf(DB, barId);
 
-  const [totRows, debts, drinks, salesRes, meta, regsRes, restocksRes, shiftsRes, stocktakesRes, takeAggRes] = await Promise.all([
+  const [totRows, debts, drinks, salesRes, meta, regsRes, restocksRes, wasteRes, shiftsRes, stocktakesRes, takeAggRes] = await Promise.all([
     DB.prepare(`SELECT pay,
                   COALESCE(SUM(CASE WHEN price > 0 THEN price ELSE 0 END),0) AS s,
                   COALESCE(SUM(CASE WHEN price < 0 THEN -price ELSE 0 END),0) AS refunds,
@@ -29,6 +29,7 @@ export async function summaryHandler({ DB }, ctx, q) {
     DB.prepare('SELECT open FROM bar_meta WHERE bar_id = ?').bind(barId).first(),
     DB.prepare('SELECT name, cnt FROM regs WHERE bar_id = ? ORDER BY cnt DESC LIMIT 10').bind(barId).all(),
     DB.prepare('SELECT drink, qty, t FROM restocks WHERE bar_id = ? AND t >= ? ORDER BY t ASC LIMIT 500').bind(barId, from).all(),
+    DB.prepare('SELECT drink, qty, t FROM waste WHERE bar_id = ? AND t >= ? ORDER BY t ASC LIMIT 500').bind(barId, from).all(),
     DB.prepare('SELECT * FROM shifts WHERE bar_id = ? ORDER BY open_at DESC LIMIT 20').bind(barId).all(),
     DB.prepare('SELECT * FROM stocktakes WHERE bar_id = ? ORDER BY t DESC LIMIT 20').bind(barId).all(),
     DB.prepare(`SELECT drink, COALESCE(SUM(price),0) AS s FROM sales
@@ -163,6 +164,7 @@ export async function summaryHandler({ DB }, ctx, q) {
     feed,
     regs: regsRes.results || [],
     restocks: restocksRes.results || [],
+    waste: wasteRes.results || [],
     shifts,
     stocktakes: stocktakesRes.results || [],
     last_take: lastTake,

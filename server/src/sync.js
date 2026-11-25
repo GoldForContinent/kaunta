@@ -1,13 +1,16 @@
 // Sync: idempotent, seq-based two-way replication for a bar's ledger.
 //
-// Stock model (migration #4, kegs in #7):
+// Stock model (migration #4, kegs in #7, barrels in #8):
 //   drinks.stockMl  = ml physically on hand right now. The source of truth.
 //   Ordinary bottles: restock/set_open/stocktake count bottles and multiply by size.
-//   Kegs (drinks.keg = 1): those same fields count ml directly. A keg is one barrel
-//     sold by custom cups, never by bottle steps; expected money uses cup price/ml.
+//   Kegs (drinks.keg = 1): one active barrel is poured by custom cups; sealed
+//     barrels sit in reserve. stockMl = active ml + barrels * barrelMl.
+//     open is the last counted TOTAL ml baseline; restocks and tap waste are logged
+//     separately so expected money never counts stock that was never poured.
 //     sale        -> stockMl -= poured ml, soldMl += poured ml (daily report)
-//     restock     -> stockMl += ml,        open += ml
-//     set_open    -> stockMl = ml,         open = ml            (absolute)
+//     restock     -> stockMl += ml (open baseline unchanged)
+//     tap_barrel  -> swaps in a fresh barrel; old leftover is logged as waste
+//     set_open    -> stockMl = open = counted total ml            (absolute)
 //     stocktake   -> stockMl = ml counted  (absolute ground truth) + record
 //   new_day resets soldMl only (leftover stock carries over to tomorrow).
 
@@ -29,7 +32,7 @@ export async function subOf(DB, barId) {
   return subState(row);
 }
 
-const TYPES = new Set(['sale', 'return_sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'delete_drink', 'new_day', 'set_bar', 'restock', 'set_drink_split', 'set_shift', 'stocktake']);
+const TYPES = new Set(['sale', 'return_sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'delete_drink', 'new_day', 'set_bar', 'restock', 'set_barrels', 'restock_barrels', 'set_barrel_ml', 'tap_barrel', 'set_drink_split', 'set_shift', 'stocktake']);
 
 // Who did it? Ops carry the actor in different fields depending on type.
 function actorId(op) { return String(op.uid || op.by_user || '').slice(0, 64); }
@@ -153,15 +156,18 @@ export function applyStatements(barId, op, now, sizeOf) {
     case 'add_drink': {
       const keg = op.keg !== undefined ? (op.keg ? 1 : 0) : (Array.isArray(op.cups) && op.cups.length ? 1 : 0);
       const stock = Math.max(0, Math.round(op.stockMl || 0));
-      q('INSERT OR IGNORE INTO drinks (id, bar_id, name, size, full, half, quarter, open, soldMl, divisible, shot_ml, shot_price, cups, stockMl, keg) VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,?,?)',
+      const open = keg ? Math.max(0, Math.round(Number(op.open) || stock)) : 0;
+      const barrels = keg ? Math.max(0, Math.round(op.barrels || 0)) : 0;
+      const barrelMl = Math.max(1000, Math.round(op.barrelMl || 50000));
+      q('INSERT OR IGNORE INTO drinks (id, bar_id, name, size, full, half, quarter, open, soldMl, divisible, shot_ml, shot_price, cups, stockMl, keg, barrels, barrelMl) VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)',
         String(op.id || 'd' + now).slice(0, 64), barId, String(op.name || 'Drink').slice(0, 60),
         Math.max(1, parseFloat(op.size) || 250),
         Math.max(0, Math.round(op.full || 0)), Math.max(0, Math.round(op.half || 0)), Math.max(0, Math.round(op.quarter || 0)),
-        keg ? stock : 0,
+        open,
         op.divisible ? 1 : 0,
         Math.max(0, parseFloat(op.shot_ml) || 0), Math.max(0, Math.round(op.shot_price || 0)),
         String(op.cups !== undefined ? JSON.stringify(op.cups) : '[]'),
-        stock, keg);
+        stock, keg, barrels, barrelMl);
       break;
     }
     case 'delete_drink': {
@@ -172,6 +178,7 @@ export function applyStatements(barId, op, now, sizeOf) {
       if (id) {
         q('DELETE FROM drinks WHERE id = ? AND bar_id = ?', id, barId);
         q('DELETE FROM restocks WHERE drink = ? AND bar_id = ?', id, barId);
+        q('DELETE FROM waste WHERE drink = ? AND bar_id = ?', id, barId);
       }
       break;
     }
@@ -182,8 +189,66 @@ export function applyStatements(barId, op, now, sizeOf) {
       const t = Math.round(op.t || now);
       q('INSERT INTO restocks (id, bar_id, drink, qty, t) VALUES (?,?,?,?,?)',
         String(op.id || 'r' + t + (op.drink || '')).slice(0, 64), barId, String(op.drink || ''), qty, t);
-      q('UPDATE drinks SET open = open + ?, stockMl = stockMl + ? WHERE id = ? AND bar_id = ?',
-        qty, keg ? qty : Math.round(qty * ((info && info.size) || 0)), String(op.drink || ''), barId);
+      // Restocks are logged separately from the counted baseline, otherwise a
+      // stock-take would count the same received stock twice.
+      q('UPDATE drinks SET stockMl = stockMl + ? WHERE id = ? AND bar_id = ?',
+        keg ? qty : Math.round(qty * ((info && info.size) || 0)), String(op.drink || ''), barId);
+      break;
+    }
+    case 'set_barrels': {
+      // Absolute count of sealed barrels. The difference is a restock or waste.
+      if (op.drink) {
+        const id = String(op.drink).slice(0, 64);
+        const b = Math.max(0, Math.round(op.barrels || 0));
+        const t = Math.round(op.t || now);
+        q('INSERT INTO restocks (id, bar_id, drink, qty, t) SELECT ?,?,?,(? - COALESCE(barrels,0))*COALESCE(barrelMl,50000),? FROM drinks WHERE id=? AND bar_id=? AND ? > COALESCE(barrels,0)',
+          String(op.id || 'br' + t + id).slice(0, 64), barId, id, b, t, id, barId, b);
+        q('INSERT INTO waste (id, bar_id, drink, qty, t) SELECT ?,?,?,(COALESCE(barrels,0) - ?)*COALESCE(barrelMl,50000),? FROM drinks WHERE id=? AND bar_id=? AND ? < COALESCE(barrels,0)',
+          String(op.id || 'bw' + t + id).slice(0, 64), barId, id, b, t, id, barId, b);
+        q('UPDATE drinks SET barrels = ?, stockMl = MAX(0, stockMl + (? - COALESCE(barrels,0))*COALESCE(barrelMl,50000)) WHERE id=? AND bar_id=?',
+          b, b, id, barId);
+      }
+      break;
+    }
+    case 'restock_barrels': {
+      if (op.drink) {
+        const id = String(op.drink).slice(0, 64);
+        const qty = Math.max(0, Math.round(op.qty || 0));
+        if (qty > 0) {
+          const t = Math.round(op.t || now);
+          q('INSERT INTO restocks (id, bar_id, drink, qty, t) SELECT ?,?,?,? * COALESCE(barrelMl,50000),? FROM drinks WHERE id=? AND bar_id=?',
+            String(op.id || 'rb' + t + id).slice(0, 64), barId, id, qty, t, id, barId);
+          q('UPDATE drinks SET barrels = COALESCE(barrels,0) + ?, stockMl = stockMl + ? * COALESCE(barrelMl,50000) WHERE id=? AND bar_id=?',
+            qty, qty, id, barId);
+        }
+      }
+      break;
+    }
+    case 'set_barrel_ml': {
+      if (op.drink) {
+        const id = String(op.drink).slice(0, 64);
+        const bm = Math.max(1000, Math.round(op.barrelMl || 50000));
+        const t = Math.round(op.t || now);
+        q('INSERT INTO restocks (id, bar_id, drink, qty, t) SELECT ?,?,?,(? - COALESCE(barrelMl,50000))*COALESCE(barrels,0),? FROM drinks WHERE id=? AND bar_id=? AND ? > COALESCE(barrelMl,50000)',
+          String(op.id || 'bm' + t + id).slice(0, 64), barId, id, bm, t, id, barId, bm);
+        q('INSERT INTO waste (id, bar_id, drink, qty, t) SELECT ?,?,?,(COALESCE(barrelMl,50000) - ?)*COALESCE(barrels,0),? FROM drinks WHERE id=? AND bar_id=? AND ? < COALESCE(barrelMl,50000)',
+          String(op.id || 'bwx' + t + id).slice(0, 64), barId, id, bm, t, id, barId, bm);
+        q('UPDATE drinks SET barrelMl = ?, stockMl = MAX(0, stockMl + (? - COALESCE(barrelMl,50000))*COALESCE(barrels,0)) WHERE id=? AND bar_id=?',
+          bm, bm, id, barId);
+      }
+      break;
+    }
+    case 'tap_barrel': {
+      if (op.drink) {
+        const id = String(op.drink).slice(0, 64);
+        const ml = Math.max(1, Math.round(op.ml || 50000));
+        const t = Math.round(op.t || now);
+        // Log the old barrel's remainder before replacing it, so it is not blamed on sales.
+        q('INSERT INTO waste (id, bar_id, drink, qty, t) SELECT ?,?,?,MAX(0, stockMl - COALESCE(barrels,0)*COALESCE(barrelMl,50000)),? FROM drinks WHERE id=? AND bar_id=? AND COALESCE(barrels,0)>0 AND stockMl > COALESCE(barrels,0)*COALESCE(barrelMl,50000)',
+          String(op.id || 'tap' + t + id).slice(0, 64), barId, id, t, id, barId);
+        q('UPDATE drinks SET barrels = COALESCE(barrels,0) - 1, stockMl = MAX(0, (COALESCE(barrels,0) - 1) * COALESCE(barrelMl,50000) + ?) WHERE id=? AND bar_id=? AND COALESCE(barrels,0)>0',
+          ml, id, barId);
+      }
       break;
     }
     case 'set_drink_split': {
@@ -283,6 +348,7 @@ async function buildStocktake(DB, barId, op, now) {
   const prevCounts = (() => { try { return JSON.parse(prev ? prev.counts || '{}' : '{}'); } catch (e) { return {}; } })();
 
   const restockRows = since ? (await DB.prepare('SELECT drink, qty, t FROM restocks WHERE bar_id = ? AND t > ?').bind(barId, since).all()).results || [] : (await DB.prepare('SELECT drink, qty, t FROM restocks WHERE bar_id = ?').bind(barId).all()).results || [];
+  const wasteRows = since ? (await DB.prepare('SELECT drink, qty, t FROM waste WHERE bar_id = ? AND t > ?').bind(barId, since).all()).results || [] : (await DB.prepare('SELECT drink, qty, t FROM waste WHERE bar_id = ?').bind(barId).all()).results || [];
   const saleRows = (await DB.prepare("SELECT drink, price FROM sales WHERE bar_id = ? AND t > ? AND drink NOT IN ('_pay','_deni')").bind(barId, since).all()).results || [];
   const ledgerBy = {};
   saleRows.forEach((s) => { ledgerBy[s.drink] = (ledgerBy[s.drink] || 0) + s.price; });
@@ -299,7 +365,8 @@ async function buildStocktake(DB, barId, op, now) {
     const prevC = prevCounts[d.id] != null ? Number(prevCounts[d.id]) : null;
     const baseC = prevC != null ? prevC : Math.max(0, Math.round(+d.open || 0));
     const restockC = restockRows.filter((r) => r.drink === d.id).reduce((a, r) => a + (r.qty || 0), 0);
-    const consumed = Math.max(0, baseC + restockC - cNow);
+    const wasteC = wasteRows.filter((w) => w.drink === d.id).reduce((a, w) => a + (w.qty || 0), 0);
+    const consumed = Math.max(0, baseC + restockC - wasteC - cNow);
     const size = Math.max(1, parseFloat(d.size) || 250);
     const band = serverBand(d, consumed);
     const ledger = ledgerBy[d.id] || 0;
@@ -310,11 +377,12 @@ async function buildStocktake(DB, barId, op, now) {
     };
     const nextOpen = keg ? cNow : Math.round(cNow);
     const nextMl = keg ? cNow : Math.round(cNow * size);
-    if (setShelf) {
-      stmts.push(['UPDATE drinks SET open = ?, stockMl = ?, soldMl = 0 WHERE bar_id = ? AND id = ?', [nextOpen, nextMl, barId, d.id]]);
-    } else {
-      stmts.push(['UPDATE drinks SET open = ?, stockMl = ? WHERE bar_id = ? AND id = ?', [nextOpen, nextMl, barId, d.id]]);
-    }
+    // A keg stock-take counts TOTAL ml (active barrel + sealed barrels). Derive the
+    // reserve from full-barrel multiples so the next tap knows what is in line.
+    const nextBarrels = keg ? Math.max(0, Math.floor(cNow / Math.max(1, +d.barrelMl || 50000))) : 0;
+    const shelf = setShelf ? ', soldMl = 0' : '';
+    stmts.push([`UPDATE drinks SET open = ?, stockMl = ?, barrels = ?${shelf} WHERE bar_id = ? AND id = ?`,
+      [nextOpen, nextMl, nextBarrels, barId, d.id]]);
   }
   const totals = { min: Tmin, max: Tmax, ledger: Tbook, from: since };
   stmts.push(['INSERT INTO stocktakes (id, bar_id, t, by_user, by_name, note, counts, totals, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
