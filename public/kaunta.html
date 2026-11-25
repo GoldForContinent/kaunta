@@ -640,10 +640,10 @@ body.nxt .overlay{padding-top:76px}
     <!-- SELL -->
     <section id="view-sell" class="view hidden">
       <h2>Record Sale</h2>
-      <p class="sub">Pick a drink, split it, tap add — load as many different drinks as the table wants, then charge the whole round once.</p>
+      <p class="sub">Pick a drink or product, split it, tap add — load as many different items as the table wants, then charge the whole round once.</p>
 
-      <div class="ctlbl" style="margin-top:4px">Find a drink</div>
-      <input id="drinkSearch" type="search" placeholder="Search drinks…" inputmode="text" autocapitalize="words" autocomplete="off">
+      <div class="ctlbl" style="margin-top:4px">Find a drink or product</div>
+      <input id="drinkSearch" type="search" placeholder="Search drinks & goods…" inputmode="text" autocapitalize="words" autocomplete="off">
 
       <div class="drinks" id="drinkList"></div>
 
@@ -723,8 +723,13 @@ body.nxt .overlay{padding-top:76px}
       <h2>Stock & Shift</h2>
       <p class="sub">Opening stock, refills and expected money — counts against the shelf.</p>
       <div id="shiftCard"></div>
+      <div class="seg" id="stockCat" style="margin-top:12px">
+        <div class="chip" data-cat="drinks">Drinks</div>
+        <div class="chip" data-cat="goods">Goods</div>
+        <div class="chip" data-cat="all">All</div>
+      </div>
       <div class="stock-actions">
-        <button class="btn ghost" onclick="openAddDrink()">+ Add drink</button>
+        <button class="btn ghost" id="addStockBtn" onclick="openAddDrink(STOCK_CAT==='goods'?'goods':'full')">+ Add drink</button>
         <button class="btn primary" onclick="openTake()" title="Count shelf and value stock-take">🧮 Count shelf</button>
       </div>
       <div id="stockList" style="margin-top:12px"></div>
@@ -1432,9 +1437,10 @@ function renderSell(){
   try{
     const el=document.getElementById('drinkList'); el.innerHTML='';
     const q=(S.search||'').toLowerCase();
-    const drinks=[...DB.drinks].sort((a,b)=>(b.quick||0)-(a.quick||0)||a.name.localeCompare(b.name)).filter(d=>fuzzyMatch(d.name,q));
-    if(!drinks.length){ el.innerHTML='<div class="empty">No drinks match.</div>'; return; }
-    drinks.forEach(d=>{
+    const searchText=d=>[d.name,isGoods(d)?unitName(d):'',isGoods(d)&&goodsHasSub(d)?subName(d):'',isKeg(d)?'keg':'',isGoods(d)?'goods retail':'',d.shot_ml>0&&d.shot_price>0?'shots':'','drink'].join(' ');
+    const items=[...DB.drinks].sort((a,b)=>(b.quick||0)-(a.quick||0)||a.name.localeCompare(b.name)).filter(d=>fuzzyMatch(searchText(d),q));
+    if(!items.length){ el.innerHTML='<div class="empty">No drinks or goods match.</div>'; return; }
+    items.forEach(d=>{
       const keg=isKeg(d);
       const total=(roundLeft(d)||0)+d.soldMl, left=Math.max(0,Math.round(roundLeft(d))||0);
       const active=keg?Math.max(0,Math.round((Number(d.stockMl)||0)-(Number(d.barrels)||0)*(Number(d.barrelMl)||50000))):left;
@@ -1449,11 +1455,12 @@ function renderSell(){
         :(d.size+' ml · '+(left/Ml(d)).toFixed(1)+' left');
       const fig=keg?from:(goods?kes(d.full):(shotOnly?kes(d.shot_price):kes(d.full)));
       const figLbl=keg?'from cup':(goods?esc(unit):(shotOnly?'per shot':'full'));
+      const catTag=goods?'<span class="tag half">goods</span>':keg?'<span class="tag half">keg</span>':shotOnly?'<span class="tag quarter">shots</span>':'';
       const div=document.createElement('div');
       div.className='drink'+(S.drink===d.id?' sel':'');
       div.innerHTML=`
         <div class="bot"><i style="height:${pct}%" class="${cls}"></i></div>
-        <div class="info"><b>${esc(d.name)}</b><span>${stockText}</span>${d.quick?'<div class="qk">★ Quick add</div>':''}${d.cups&&d.cups.length?'<div class="qk">🥤 Cups: '+d.cups.map(c=>c.label+'.'+kes(c.price)).join(', ')+'</div>':''}${goods&&goodsHasSub(d)?'<div class="qk">'+esc(subName(d))+' '+kes(d.shot_price)+'</div>':''}</div>
+        <div class="info"><b>${esc(d.name)} ${catTag}</b><span>${stockText}</span>${d.quick?'<div class="qk">★ Quick add</div>':''}${d.cups&&d.cups.length?'<div class="qk">🥤 Cups: '+d.cups.map(c=>c.label+'.'+kes(c.price)).join(', ')+'</div>':''}${goods&&goodsHasSub(d)?'<div class="qk">'+esc(subName(d))+' '+kes(d.shot_price)+'</div>':''}</div>
         <div class="pr"><div class="fig">${fig}</div><small>${figLbl}</small></div>`;
       div.onclick=()=>{S.drink=d.id; renderSell(); updChips();};
       el.appendChild(div);
@@ -2010,9 +2017,24 @@ function drinkBand(d, units){
   const max=Math.round(n*Math.max(...rates));
   return {min, max:Math.max(min,max)};
 }
+/* Stock page catalogue filter. The ledger stays one shared list; this only hides cards. */
+let STOCK_CAT=(()=>{ const v=localStorage.getItem('kaunta_stock_cat')||'all'; return ['drinks','goods','all'].includes(v)?v:'all'; })();
+function setStockCat(cat){
+  if(!['drinks','goods','all'].includes(cat)) return;
+  STOCK_CAT=cat; localStorage.setItem('kaunta_stock_cat',cat); renderStock();
+}
+document.querySelectorAll('#stockCat .chip').forEach(c=>{ c.onclick=()=>setStockCat(c.dataset.cat); });
 function renderStock(){
   const todayRest=d=>(DB.restocks||[]).filter(r=>r.drink===d.id && todayStr(new Date(r.t))===todayStr()).reduce((a,r)=>a+Number(r.qty||0),0);
-  document.getElementById('stockList').innerHTML = DB.drinks.map(d=>{
+  document.querySelectorAll('#stockCat .chip').forEach(c=>c.classList.toggle('sel',c.dataset.cat===STOCK_CAT));
+  const addBtn=document.getElementById('addStockBtn');
+  if(addBtn) addBtn.textContent=STOCK_CAT==='goods'?'+ Add goods':'+ Add drink';
+  const catalogue=DB.drinks.filter(d=>STOCK_CAT==='all'||(STOCK_CAT==='goods'?isGoods(d):!isGoods(d)));
+  if(!catalogue.length){
+    document.getElementById('stockList').innerHTML=`<div class="empty">${STOCK_CAT==='goods'?'No goods yet — tap “+ Add goods” to add njugu, cigarettes, food or other retail items.':STOCK_CAT==='drinks'?'No drinks in this catalogue yet — tap “+ Add drink”.':'Nothing in stock yet — add a drink or goods above.'}</div>`;
+    return;
+  }
+  document.getElementById('stockList').innerHTML = catalogue.map(d=>{
     const keg=isKeg(d);
     const total=roundLeft(d)+d.soldMl, left=Math.max(0,Math.round(roundLeft(d))||0);
     const sold=Math.max(0,Math.round(d.soldMl||0));
@@ -2620,7 +2642,7 @@ function setPrice(id,k,v){
   d[k]=Math.max(0,Math.round(parseFloat(v)||0));
   save(); enqueue('set_price',{drink:id,k,v:d[k]}); renderStock(); renderSell(); renderDash();
 }
-function openAddDrink(){
+function openAddDrink(pref){
   window._ndCups=[];
   openSheet(`
     <h3 class="serif">Add drink / product</h3>
@@ -2672,41 +2694,39 @@ function openAddDrink(){
       <div class="ctlbl">Goods details</div>
       <div class="rowflex" style="margin-bottom:6px">
         <input id="ndUnit" type="text" placeholder="Unit (piece / pack / plate / kg)" value="piece" style="flex:2">
-        <input id="ndPackSize" type="number" placeholder="Per pack" value="1" style="flex:1">
       </div>
       <div class="rowflex" style="margin-bottom:6px">
         <input id="ndSubUnit" type="text" placeholder="Sub-unit (stick / 250g plate)" value="stick" style="flex:2">
         <input id="ndSubMl" type="number" placeholder="Units per sub" value="1" style="flex:1">
         <input id="ndSubPrice" type="number" placeholder="Sub price" style="flex:1">
       </div>
-      <p class="mini" style="margin-top:0">Njugu, matches, lighters, plates: per pack 1. Cigarettes: 20, pack, stick, 1, stick price. Nyama choma: 1000, kg, 250g plate, 250, plate price.</p>
+      <p class="mini" style="margin-top:0">Use the “Units per pack” field above. Njugu, matches, lighters, plates: 1. Cigarettes: 20, pack, stick, 1, stick price. Nyama choma: 1000, kg, 250g plate, 250, plate price.</p>
     </div>
 
     <button class="btn primary" onclick="addDrink()">Add drink / product</button>
   `);
-  document.querySelectorAll('#sellMode .chip').forEach(c=>{
-    c.onclick=()=>{
-      document.querySelectorAll('#sellMode .chip').forEach(x=>x.classList.remove('sel'));
-      c.classList.add('sel');
-      const m=c.dataset.m;
-      const cupsMode=m==='cups', goodsMode=m==='goods';
-      const sizeEl=document.getElementById('ndSize');
-      if(goodsMode){ if(sizeEl.dataset.bottle===undefined) sizeEl.dataset.bottle=sizeEl.value||'250'; sizeEl.value=1; }
-      else if(sizeEl.dataset.bottle!==undefined){ sizeEl.value=sizeEl.dataset.bottle||'250'; delete sizeEl.dataset.bottle; }
-      document.getElementById('ndSizeLbl').textContent = goodsMode?'Units per pack (1 for single item)':'Bottle size (ml)';
-      document.getElementById('ndFullLbl').textContent = goodsMode?'Price per pack / piece (KES)':'Price · Full bottle (KES)';
-      document.getElementById('ndSizeLbl').style.display = cupsMode?'none':'';
-      document.getElementById('ndSize').style.display = cupsMode?'none':'';
-      document.getElementById('ndFullLbl').style.display = cupsMode?'none':'';
-      document.getElementById('ndFull').style.display = cupsMode?'none':'';
-      document.getElementById('ndMlLbl').style.display = cupsMode?'':'none';
-      document.getElementById('ndMlAvail').style.display = cupsMode?'':'none';
-      document.getElementById('ndDivWrap').classList.toggle('hidden', m!=='div' && m!=='both');
-      document.getElementById('ndShotWrap').classList.toggle('hidden', m!=='shots' && m!=='both');
-      document.getElementById('ndCupsWrap').classList.toggle('hidden', m!=='cups');
-      document.getElementById('ndGoodsWrap').classList.toggle('hidden', !goodsMode);
-    };
-  });
+  const applyMode=(m)=>{
+    document.querySelectorAll('#sellMode .chip').forEach(x=>x.classList.toggle('sel',x.dataset.m===m));
+    const cupsMode=m==='cups', goodsMode=m==='goods';
+    const sizeEl=document.getElementById('ndSize');
+    if(goodsMode){ if(sizeEl.dataset.bottle===undefined) sizeEl.dataset.bottle=sizeEl.value||'250'; sizeEl.value=1; }
+    else if(sizeEl.dataset.bottle!==undefined){ sizeEl.value=sizeEl.dataset.bottle||'250'; delete sizeEl.dataset.bottle; }
+    document.getElementById('ndName').placeholder = goodsMode?'e.g. Njugu, cigarettes, nyama choma':'e.g. Senator Keg';
+    document.getElementById('ndSizeLbl').textContent = goodsMode?'Units per pack (1 for single item)':'Bottle size (ml)';
+    document.getElementById('ndFullLbl').textContent = goodsMode?'Price per pack / piece (KES)':'Price · Full bottle (KES)';
+    document.getElementById('ndSizeLbl').style.display = cupsMode?'none':'';
+    document.getElementById('ndSize').style.display = cupsMode?'none':'';
+    document.getElementById('ndFullLbl').style.display = cupsMode?'none':'';
+    document.getElementById('ndFull').style.display = cupsMode?'none':'';
+    document.getElementById('ndMlLbl').style.display = cupsMode?'':'none';
+    document.getElementById('ndMlAvail').style.display = cupsMode?'':'none';
+    document.getElementById('ndDivWrap').classList.toggle('hidden', m!=='div' && m!=='both');
+    document.getElementById('ndShotWrap').classList.toggle('hidden', m!=='shots' && m!=='both');
+    document.getElementById('ndCupsWrap').classList.toggle('hidden', m!=='cups');
+    document.getElementById('ndGoodsWrap').classList.toggle('hidden', !goodsMode);
+  };
+  document.querySelectorAll('#sellMode .chip').forEach(c=>{ c.onclick=()=>applyMode(c.dataset.m); });
+  applyMode(pref==='goods'?'goods':'full');
   renderCupList();
 }
 function addCupRow(){
