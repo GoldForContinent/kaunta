@@ -617,7 +617,7 @@ body.nxt .overlay{padding-top:76px}
       </div>
 
       <div class="card">
-        <div class="cardhead"><svg class="ic ic-s"><use href="#i-scale"/></svg>Stock vs expected</div>
+        <div class="cardhead"><svg class="ic ic-s"><use href="#i-scale"/></svg>Stock vs expected<button class="btn small ghost" style="margin-left:auto;padding:6px 10px" onclick="go('stock')">Manage all</button></div>
         <div id="stockCheck"></div>
       </div>
 
@@ -1475,6 +1475,7 @@ const salesOnly = ts => ts.filter(s=>!isRet(s));
 const returnsOnly = ts => ts.filter(isRet);
 const returnAmt = ts => returnsOnly(ts).reduce((a,s)=>a+Math.abs(s.price||0),0);
 const returnByPay = (ts,p) => returnsOnly(ts).filter(s=>s.pay===p).reduce((a,s)=>a+Math.abs(s.price||0),0);
+let stockCheckAll=false;   // "Stock vs expected" card: collapsed by default on the dash
 
 function countUp(el,to,cur){
   const start=cur||0, dur=500, t0=performance.now();
@@ -1539,27 +1540,7 @@ function renderDash(){
   }
   if(!al.innerHTML) al.innerHTML=`<div class="alert ok"><div class="sig">${IC('shield')}</div><div><h4>Everything adds up</h4><p>Sales, stock and payments all in sync. Keep the counter ticking, Boss.</p></div></div>`;
 
-  /* stock check — expected money band (min = all whole, max = all subdivided) */
-  const t2=todaySales();
-  const exp={min:0,max:0,book:0};
-  const stockRows=DB.drinks.map(d=>{
-    const soldB=d.soldMl/Ml(d), band=drinkBand(d,soldB);
-    const book=t2.filter(s=>s.drink===d.id).reduce((a,s)=>a+s.price,0);
-    exp.min+=band.min; exp.max+=band.max; exp.book+=book;
-    const total=(roundLeft(d)||0)+d.soldMl, left=Math.max(0,(Math.round(roundLeft(d)))||0), pct=total>0?Math.max(0,left/total*100):0;
-    const cls=left<=0?'red':(pct<25?'grn':'');
-    const out=(book<band.min-1)||(book>band.max+1);
-    return `<div style="margin-bottom:12px"><div class="row" style="border:none;padding:3px 0">
-      <div class="l"><b style="font-size:13.5px">${d.name}</b><span>${left.toFixed(0)} / ${total.toFixed(0)} ml left</span></div>
-      <div class="r" style="text-align:right"><div style="font-family:var(--serif);font-weight:800;font-size:12.5px;color:var(--gold)">KES ${band.min} – ${band.max}</div>
-      <div class="mini" style="margin:0;line-height:1.3">ledger ${kes(book)}${out?' <span style="color:var(--ember)">· OFF!</span>':''}</div></div></div>
-      <div class="gauge"><i class="${cls}" style="width:${pct}%"></i></div></div>`;
-  }).join('');
-  const expOut=(exp.book<exp.min-1)||(exp.book>exp.max+1);
-  document.getElementById('stockCheck').innerHTML=
-    `<div class="subrow"><span>Expected today</span><b class="money">KES ${exp.min} – ${exp.max}</b></div>
-     <div class="subrow"><span>Recorded on ledger</span><b ${expOut?'style="color:var(--ember)"':''}>${kes(exp.book)}</b></div>
-     <div style="margin:6px 0 2px;height:1px;background:var(--line)"></div>`+stockRows;
+  renderStockCheck();
 
   /* top movers (skip internal pay/deni ledger entries) */
   const real = s.filter(x=>DB.drinks.some(y=>y.id===x.drink));
@@ -1586,6 +1567,48 @@ function renderDash(){
   }).join('');
 }catch(e){ console.error('renderDash error', e); }
 }
+
+/* Stock vs expected: keep the dash short. Problems first, then a Show all toggle. */
+function renderStockCheck(){
+  const el=document.getElementById('stockCheck'); if(!el) return;
+  const t2=todaySales();
+  const exp={min:0,max:0,book:0};
+  const rows=DB.drinks.map(d=>{
+    const soldB=d.soldMl/Ml(d), band=drinkBand(d,soldB);
+    const book=t2.filter(x=>x.drink===d.id).reduce((a,x)=>a+x.price,0);
+    exp.min+=band.min; exp.max+=band.max; exp.book+=book;
+    const raw=roundLeft(d)||0;
+    const left=Math.max(0,Math.round(raw));
+    const total=raw+d.soldMl;
+    const pct=total>0?Math.max(0,left/total*100):0;
+    const cls=left<=0?'red':(pct<25?'grn':'');
+    const out=(book<band.min-1)||(book>band.max+1);
+    const over=raw < -1;
+    const low=left<=0 || pct<25;
+    const rank=out?0:over?1:low?2:3;
+    const flag=out?' <span style="color:var(--ember)">· OFF!</span>':over?' <span style="color:var(--ember)">· OVER!</span>':'';
+    return {rank,name:(d.name||'').toLowerCase(),html:`<div style="margin-bottom:12px"><div class="row" style="border:none;padding:3px 0">
+      <div class="l"><b style="font-size:13.5px">${d.name}</b><span>${left.toFixed(0)} / ${total.toFixed(0)} ml left</span></div>
+      <div class="r" style="text-align:right"><div style="font-family:var(--serif);font-weight:800;font-size:12.5px;color:var(--gold)">KES ${band.min} – ${band.max}</div>
+      <div class="mini" style="margin:0;line-height:1.3">ledger ${kes(book)}${flag}</div></div></div>
+      <div class="gauge"><i class="${cls}" style="width:${pct}%"></i></div></div>`};
+  });
+  rows.sort((a,b)=>a.rank-b.rank || a.name.localeCompare(b.name));
+  const shown=stockCheckAll?rows:rows.slice(0,8);
+  const hidden=rows.length-shown.length;
+  const expOut=(exp.book<exp.min-1)||(exp.book>exp.max+1);
+  let foot='';
+  if(rows.length>8) foot = hidden>0
+    ? `<button class="btn ghost" style="width:100%;margin-top:4px" onclick="toggleStockCheck()">Show all ${rows.length} drinks · ${hidden} more</button>`
+    : `<button class="btn ghost" style="width:100%;margin-top:4px" onclick="toggleStockCheck()">Show less</button>`;
+  el.innerHTML=
+    `<div class="subrow"><span>Expected today</span><b class="money">KES ${exp.min} – ${exp.max}</b></div>
+     <div class="subrow"><span>Recorded on ledger</span><b ${expOut?'style="color:var(--ember)"':''}>${kes(exp.book)}</b></div>
+     <div style="margin:6px 0 2px;height:1px;background:var(--line)"></div>`+
+    (rows.length>8&&!stockCheckAll?`<div class="mini" style="margin:2px 0 10px">Showing the ${shown.length} that need attention first.</div>`:'')+
+    shown.map(r=>r.html).join('')+foot;
+}
+function toggleStockCheck(){ stockCheckAll=!stockCheckAll; renderStockCheck(); }
 
 function copyReport(){
   const t=todaySales(), s=salesOnly(t);
