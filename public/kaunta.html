@@ -1701,7 +1701,7 @@ function renderHist(){
       return `<div class="row"><div class="l"><b>${d?d.name:'Loading…'} ${s.size?'<span class="tag '+s.size+'">'+FR_LBL[s.size]+'</span>':''}${s.qty>1?'  <span class="tag" style="background:rgba(255,255,255,.06);color:var(--dim)">×'+s.qty+'</span>':''}${s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':''}${s.isReturn?' <span class="tag" style="background:rgba(255,92,56,.14);color:var(--ember)">RETURNED</span>':''}</b>
         <span>${tmm} · ${s.staff||s.who||'over counter'}</span></div>
         <div class="r" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><b class="money" style="font-size:15px">${kes(s.price)}</b><br>
-        <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span>${!s.isReturn?'<button class="btn small ghost" style="margin-top:2px;padding:6px 10px;font-size:10.5px;background:rgba(255,92,56,.12);color:var(--ember);border:1px solid rgba(255,92,56,.3)" onclick="returnSale('+String(JSON.stringify({id:s.uid||s.t,drink:s.drink,size:s.size,qty:s.qty,price:s.price,pay:s.pay,who:s.who,staff:s.staff}).replace(/['\\]/g,'\\$&'))+')">Return</button>':''}</div></div>`;
+        <span class="tag ${s.pay}"><span class="dp"></span>${PL[s.pay]||s.pay}</span>${!s.isReturn?`<button class="btn small ghost" style="margin-top:2px;padding:6px 10px;font-size:10.5px;background:rgba(255,92,56,.12);color:var(--ember);border:1px solid rgba(255,92,56,.3)" onclick="returnSale(${esc(JSON.stringify({id:s.uid||s.t,drink:s.drink,size:s.size,qty:s.qty,price:s.price,pay:s.pay,who:s.who,staff:s.staff}))})">Return</button>`:''}</div></div>`;
     }).join('');
     html+='</div>';
   });
