@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   status             TEXT NOT NULL DEFAULT 'trial',   -- cached; recomputed in code
   trial_ends_at      INTEGER,                          -- ms epoch
   current_period_end INTEGER,                          -- ms epoch (paid until)
-  price_cents        INTEGER NOT NULL DEFAULT 50000,   -- KES 500 = 50000 cents
+  price_cents        INTEGER NOT NULL DEFAULT 100000,  -- KES 1,000 = 100000 cents
   updated_at         INTEGER NOT NULL
 );
 
@@ -120,4 +120,4 @@ CREATE TABLE IF NOT EXISTS bar_meta (
 );
 
 -- subscription defaults get set in code; preview helper below (optional):
--- UPDATE subscriptions SET status='trial', trial_ends_at = strftime('%s','now')*1000 + 30*86400000 WHERE status='trial';
+-- UPDATE subscriptions SET status='trial', trial_ends_at = strftime('%s','now')*1000 + 7*86400000 WHERE status='trial';

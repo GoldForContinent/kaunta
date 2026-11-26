@@ -43,8 +43,8 @@ async function creditPeriod(DB, barId, amountKsh, via, ref, checkoutId, phone) {
   ]);
   if (!subRow) return { ok: false, error: 'no subscription' };
   if (dup) return { ok: true, already: true };
-  if (Math.round(amountKsh) !== Math.round((subRow.price_cents || 50000) / 100)) {
-    return { ok: false, error: `Expected KES ${(subRow.price_cents || 50000) / 100}, got ${amountKsh}` };
+  if (Math.round(amountKsh) !== Math.round((subRow.price_cents || 100000) / 100)) {
+    return { ok: false, error: `Expected KES ${(subRow.price_cents || 100000) / 100}, got ${amountKsh}` };
   }
   const now = Date.now();
   let start = now;
@@ -62,21 +62,36 @@ async function creditPeriod(DB, barId, amountKsh, via, ref, checkoutId, phone) {
 
 export async function payInfo(env, ctx) {
   const sub = await subOf(env.DB, ctx.bar.id);
-  const manual = !env.MPESA_CONSUMER_KEY || !env.MPESA_TILL;
+  const daraja = !!env.MPESA_CONSUMER_KEY && !!env.MPESA_TILL;
+  const manual = !daraja || sub.pay_mode === 'manual';
   return json({
     ok: true,
     mode: manual ? 'manual' : 'stk',
-    price: Math.round((sub.price_cents || 50000) / 100),
+    price: Math.round((sub.price_cents || 100000) / 100),
     paybill: env.MPESA_TILL || '',
     account: ctx.bar.slug,
     msg: manual ? 'Lipa na M-Pesa — then confirm the code.' : 'An M-Pesa prompt is sent to the owner’s phone.',
   });
 }
 
+const PLAN_PRICE = { small: 100000, club: 199900 };
+
+// Owner changes their tier and preferred M-Pesa option at any time.
+export async function updatePlan(env, ctx) {
+  if (!ctx.user || ctx.user.role !== 'owner') return json({ error: 'Owner only' }, 403);
+  const body = ctx.body || {};
+  const plan = body.tier === 'club' ? 'club' : 'small';
+  const payMode = body.pay_mode === 'stk' ? 'stk' : 'manual';
+  await env.DB.prepare('UPDATE subscriptions SET plan = ?, pay_mode = ?, price_cents = ?, updated_at = ? WHERE bar_id = ?')
+    .bind(plan, payMode, PLAN_PRICE[plan], Date.now(), ctx.bar.id).run();
+  const sub = await subOf(env.DB, ctx.bar.id);
+  return json({ ok: true, subscription: sub });
+}
+
 export async function payRequest(env, ctx) {
   if (ctx.user.role !== 'owner') return json({ error: 'Only the bar owner can pay' }, 403);
   const sub = await subOf(env.DB, ctx.bar.id);
-  const price = Math.round((sub.price_cents || 50000) / 100);
+  const price = Math.round((sub.price_cents || 100000) / 100);
   const instructions = {
     price,
     period_days: 30,
@@ -84,8 +99,8 @@ export async function payRequest(env, ctx) {
     account: ctx.bar.slug,
   };
 
-  // Manual mode (no Daraja keys configured): show paybill + account, verify by transaction code.
-  if (!env.MPESA_CONSUMER_KEY || !env.MPESA_TILL) {
+  // Manual mode: either the owner chose it, or Daraja keys are not configured.
+  if (sub.pay_mode === 'manual' || !env.MPESA_CONSUMER_KEY || !env.MPESA_TILL) {
     return json({ ok: true, mode: 'manual', ...instructions, paybill: env.MPESA_TILL || 'enter-your-paybill', steps: [
       `Lipa na M-Pesa → Pay Bill → ${env.MPESA_TILL || 'your till'}`,
       `Enter Account No: ${ctx.bar.slug}`,
@@ -155,13 +170,13 @@ export async function payCallback(env, raw) {
 
 export async function payVerify(env, ctx) {
   if (ctx.user.role !== 'owner') return json({ error: 'Only the bar owner can pay' }, 403);
-  if (env.MPESA_CONSUMER_KEY && env.MPESA_TILL && env.MPESA_MANUAL_ALLOW !== '1') {
+  const sub = await subOf(env.DB, ctx.bar.id);
+  if (env.MPESA_CONSUMER_KEY && env.MPESA_TILL && sub.pay_mode !== 'manual' && env.MPESA_MANUAL_ALLOW !== '1') {
     return json({ ok: false, error: 'Use the Pay button — an M-Pesa prompt is sent to the phone automatically' }, 400);
   }
   const ref = String((ctx.body && ctx.body.ref) || '').trim();
   if (!ref) return json({ error: 'Paste the M-Pesa transaction code (e.g. SLK3XQ2B9L)' }, 400);
-  const sub = await subOf(env.DB, ctx.bar.id);
-  const result = await creditPeriod(env.DB, ctx.bar.id, Math.round((sub.price_cents || 50000) / 100), 'manual', ref, null, null);
+  const result = await creditPeriod(env.DB, ctx.bar.id, Math.round((sub.price_cents || 100000) / 100), 'manual', ref, null, null);
   if (!result.ok) return json({ error: result.error || 'Could not verify payment' }, 400);
   return json({ ok: true, ...result });
 }

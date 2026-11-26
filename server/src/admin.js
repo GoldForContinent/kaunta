@@ -110,7 +110,7 @@ export async function adminStatus(env, ctx) {
 
   let stmts = null;
   if (action === 'trial') {
-    stmts = [env.DB.prepare('UPDATE subscriptions SET trial_ends_at = ?, current_period_end = NULL, updated_at = ? WHERE bar_id = ?').bind(now + 30 * DAY, now, barId)];
+    stmts = [env.DB.prepare('UPDATE subscriptions SET trial_ends_at = ?, current_period_end = NULL, updated_at = ? WHERE bar_id = ?').bind(now + 7 * DAY, now, barId)];
   } else if (action === 'activate') {
     stmts = [env.DB.prepare('UPDATE subscriptions SET current_period_end = ?, trial_ends_at = NULL, updated_at = ? WHERE bar_id = ?').bind(now + 30 * DAY, now, barId)];
   } else if (action === 'suspend') {

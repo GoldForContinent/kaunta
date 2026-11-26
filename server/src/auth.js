@@ -13,6 +13,7 @@ function slugify(s) {
 }
 
 const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
+const PLAN_PRICE = { small: 100000, club: 199900 };  // KES 1,000 / 1,999
 
 export async function register({ DB }, body) {
   const name = (body.name || '').toString().trim().slice(0, 60);
@@ -43,12 +44,15 @@ export async function register({ DB }, body) {
   const slug = slugify(name) + '-' + userId.slice(0, 4);
   const barId = uuid();
   const now = Date.now();
+  const tier = body.tier === 'club' ? 'club' : 'small';
+  const payMode = body.pay_mode === 'stk' ? 'stk' : 'manual';
+  const priceCents = PLAN_PRICE[tier];
   try {
     await DB.batch([
       DB.prepare("INSERT INTO users (id, email, pass_hash, pass_salt, name, role, bar_id, created_at) VALUES (?,?,?,?,?, 'owner', NULL, ?)").bind(userId, email, passHash, salt, name, now),
       DB.prepare('INSERT INTO bars (id, name, slug, join_code, owner_id, created_at) VALUES (?,?,?,?,?,?)').bind(barId, name, slug, genJoinCode(), userId, now),
       DB.prepare('UPDATE users SET bar_id = ? WHERE id = ?').bind(barId, userId),
-      DB.prepare('INSERT INTO subscriptions (bar_id, status, trial_ends_at, current_period_end, price_cents, updated_at) VALUES (?,?,?,NULL,50000,?)').bind(barId, 'trial', now + TRIAL, now),
+      DB.prepare('INSERT INTO subscriptions (bar_id, status, trial_ends_at, current_period_end, price_cents, plan, pay_mode, updated_at) VALUES (?,?,?,NULL,?,?,?,?)').bind(barId, 'trial', now + TRIAL, priceCents, tier, payMode, now),
       DB.prepare('INSERT INTO bar_meta (bar_id, open, last_sync) VALUES (?,?,?)').bind(barId, now, now),
     ]);
   } catch (e) {

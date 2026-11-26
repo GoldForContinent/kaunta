@@ -1,4 +1,4 @@
-const VERSION = 'v6';
+const VERSION = 'v7';
 const CACHE = 'kaunta-' + VERSION;
 const ASSETS = [
   './index.html',

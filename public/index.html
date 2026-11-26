@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0b0d0a">
-<meta name="description" content="Kaunta — the bar ledger that never sleeps. Fast offline sales recording, M-Pesa and deni tracking for small Kenyan bars. 30-day free trial.">
+<meta name="description" content="Kaunta — the bar ledger that never sleeps. Fast offline sales recording, M-Pesa and deni tracking for small Kenyan bars. 7-day free trial, KES 1,000 or KES 1,999 a month, personal onboarding for the first 5 paying bars.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -121,6 +121,10 @@ section{padding:64px 0;border-top:1px solid var(--line)}
 .price .amt small{font-size:15px;-webkit-text-fill-color:var(--dim);font-family:var(--sans);font-weight:700;letter-spacing:1px}
 .price p{font-size:12.5px;color:var(--dim);margin:12px 0 18px;line-height:1.6}
 .price .btn{width:100%;justify-content:center}
+.payopts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;max-width:720px;margin:16px auto 0}
+.payopt{border:1px solid var(--line);border-radius:16px;padding:18px;text-align:left;background:rgba(255,255,255,.025)}
+.payopt b{display:block;font-size:13px;color:var(--paper);margin-bottom:6px}
+.payopt p{font-size:12px;color:var(--dim);line-height:1.6;margin:0}
 ul.checks{list-style:none;margin-top:14px}
 ul.checks li{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--paper);padding:5px 0}
 ul.checks li::before{content:'';width:15px;height:15px;border-radius:5px;flex:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 6 9 17l-5-5' fill='none' stroke='%233fae5a' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
@@ -209,7 +213,7 @@ body.nxt .overlay{padding-top:76px}
       <a class="btn primary cta-app" href="kaunta.html">Install the app on this phone</a>
       <a class="btn ghost" href="kaunta.html">Log in or create an account</a>
     </div>
-    <div class="mini">Free 30-day trial · then <b>KES 500/month</b> via M-Pesa</div>
+    <div class="mini">Free 7-day trial · then <b>KES 1,000/month</b> for a small bar or <b>KES 1,999/month</b> for a big club · M-Pesa</div>
 
     <div class="phones">
       <div class="phone back" aria-hidden="true">
@@ -285,25 +289,36 @@ body.nxt .overlay{padding-top:76px}
   <section id="pricing">
     <div class="sec-head">
       <div class="k">Pricing</div>
-      <h2>Simple, honest, M-Pesa</h2>
-      <p>One bar, one price. No hidden setup costs, no card needed.</p>
+      <h2>Two tiers. No surprises.</h2>
+      <p>Pick the one that fits your counter. No setup fee, no card needed — pay by M-Pesa after the trial.</p>
     </div>
     <div class="pricing">
       <div class="price">
         <div class="lbl">Free trial</div>
-        <div class="amt">30<small> days</small></div>
-        <p>Full access the moment the owner signs up — sell, track debt, watch from anywhere. No payment details needed.</p>
+        <div class="amt">7<small> days</small></div>
+        <p>Full access the moment the owner signs up — sell, track debt, watch from anywhere. No payment details needed. First 5 paying bars get personal onboarding.</p>
         <a class="btn ghost" href="kaunta.html">Start free</a>
       </div>
+      <div class="price">
+        <div class="lbl">Small bar</div>
+        <div class="amt">KES 1,000<small>/month</small></div>
+        <p>One counter, a couple of bartenders, unlimited drinks and history. Everything a neighbourhood bar needs.</p>
+        <a class="btn ghost" href="kaunta.html">Start with small bar</a>
+      </div>
       <div class="price featured">
-        <div class="lbl">Monthly subscription</div>
-        <div class="amt">KES 500<small>/month</small></div>
-        <p>One bar, unlimited drinks, phones and history. Paid by M-Pesa — auto STK prompt, or a Till number + code you verify in app.</p>
-        <a class="btn primary cta-app" href="kaunta.html">Install and pay</a>
+        <div class="lbl">Big club</div>
+        <div class="amt">KES 1,999<small>/month</small></div>
+        <p>Busy nights, many phones, many bartenders. The same simple ledger with room for a full roster and bigger stock.</p>
+        <a class="btn primary cta-app" href="kaunta.html">Start with big club</a>
       </div>
     </div>
+    <div class="payopts">
+      <div class="payopt"><b>1 · M-Pesa prompt (STK)</b><p>The owner taps “Send M-Pesa prompt” and confirms on their phone. The subscription renews automatically once M-Pesa confirms.</p></div>
+      <div class="payopt"><b>2 · Pay Bill + code</b><p>No M-Pesa setup needed. Send money to the Pay Bill, then paste the M-Pesa message code in the app to activate the bar.</p></div>
+    </div>
+    <p class="mini" style="max-width:720px;margin:14px auto 0;text-align:center">First 5 paying bars: I set everything up with you personally — catalogue, prices, phones and Owner mode.</p>
     <ul class="checks" style="max-width:560px;margin:22px auto 0;display:flex;flex-wrap:wrap;gap:6px 22px;justify-content:center">
-      <li>30-day free trial</li><li>No card required to start</li><li>M-Pesa payments</li><li>Install on as many phones as you like</li>
+      <li>7-day free trial</li><li>No card required to start</li><li>Choose either M-Pesa payment option</li><li>Personal onboarding for first 5 paying bars</li><li>Change tier or payment option any time</li>
     </ul>
   </section>
 
@@ -323,7 +338,7 @@ body.nxt .overlay{padding-top:76px}
       </details>
       <details>
         <summary>How do payments work?<span class="pm">+</span></summary>
-        <div class="a">After the free 30-day trial the bar pays KES 500/month with M-Pesa. In automatic mode the owner taps "Send M-Pesa prompt" and enters the PIN. Without any setup, manual mode shows the Till number + account — the owner pays and verifies the M-Pesa code in the app.</div>
+        <div class="a">After the free 7-day trial the bar pays KES 1,000/month (small bar) or KES 1,999/month (big club). Choose either option at sign-up: an M-Pesa prompt sent to the owner’s phone, or the manual Pay Bill + account where you paste the M-Pesa transaction code in the app. You can change the option any time in Owner mode. First 5 paying bars get set up personally.</div>
       </details>
       <details>
         <summary>How do I install it on the phone?<span class="pm">+</span></summary>
@@ -346,7 +361,7 @@ body.nxt .overlay{padding-top:76px}
 
   <section class="cta-band">
     <h2>Ready for a counter that counts?</h2>
-    <p>Free for 30 days. Cancel by simply not renewing.</p>
+    <p>Free for 7 days. Then KES 1,000 or KES 1,999 a month. First 5 paying bars get personal onboarding. Cancel by simply not renewing.</p>
     <a class="btn primary cta-app" href="kaunta.html">Install Kaunta on this phone</a>
     <div style="margin-top:14px;font-size:12px;color:var(--dim)"><a href="kaunta.html">Log in</a> · <a href="admin.html" style="color:rgba(154,145,124,.4)">Systems</a></div>
   </section>
@@ -355,7 +370,7 @@ body.nxt .overlay{padding-top:76px}
 <footer>
   <div class="wrap">
     <b>Kaunta</b> · the bar ledger that never sleeps<br>
-    A free Cloudflare Workers + D1 service for small Kenyan bars.<br>
+    A cheap, simple, owner-controlled bar ledger for small Kenyan bars.<br>
     Questions? <a href="mailto:support@kaunta.co.ke">support@kaunta.co.ke</a>
   </div>
 </footer>

@@ -332,7 +332,7 @@ async function renewCustom(barId){
   await doAdmin('/api/admin/renew',{bar_id:barId,days},'Renewed +'+days+'d');
 }
 async function setStatus(barId,action){
-  const names={trial:'reset to a 30-day trial',activate:'activate for 30 days',suspend:'suspend sales'};
+  const names={trial:'reset to a 7-day trial',activate:'activate for 30 days',suspend:'suspend sales'};
   if(!confirm('Apply "'+action+'" → '+names[action]+' for this bar?')) return;
   await doAdmin('/api/admin/status',{bar_id:barId,action},'Status: '+action);
 }

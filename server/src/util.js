@@ -3,7 +3,7 @@
 export const DAY = 86400000;
 export const MONTH = 30 * DAY;
 export const GRACE = 7 * DAY;
-export const TRIAL = 30 * DAY;
+export const TRIAL = 7 * DAY;
 
 const enc = new TextEncoder();
 
@@ -47,7 +47,7 @@ export function randomSalt() {
 export function subState(row, now = Date.now()) {
   const trialEnd = row?.trial_ends_at || 0;
   const periodEnd = row?.current_period_end || 0;
-  const priceCents = row?.price_cents || 50000;
+  const priceCents = row?.price_cents || 100000;
   let status = 'suspended';
   let graceEnd = 0;
   if (periodEnd > 0 && now <= periodEnd) {
@@ -65,6 +65,8 @@ export function subState(row, now = Date.now()) {
   }
   return {
     status,
+    plan: row?.plan === 'club' ? 'club' : 'small',
+    pay_mode: row?.pay_mode === 'stk' ? 'stk' : 'manual',
     price_cents: priceCents,
     trial_ends_at: trialEnd || null,
     current_period_end: periodEnd || null,

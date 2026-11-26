@@ -5,7 +5,7 @@ import { register, login, logout, requireAuth, changePassword, adminResetPasswor
 import { syncHandler, opHandler } from './sync.js';
 import { summaryHandler } from './summary.js';
 import { auditLog } from './audit.js';
-import { payRequest, payCallback, payVerify, payInfo } from './billing.js';
+import { payRequest, payCallback, payVerify, payInfo, updatePlan } from './billing.js';
 import {
   adminStats, adminBars, adminRenew, adminStatus, adminPrice, adminPayments,
   adminAnnouncements, adminAnnounce, adminAnnounceDelete, publicAnnouncement,
@@ -76,6 +76,9 @@ export default {
       }
       if (p === '/api/bar/staff/delete' && req.method === 'POST') {
         return withCors(req, await deleteStaff(env, ctx, ctx.body));
+      }
+      if (p === '/api/bar/plan' && req.method === 'POST') {
+        return withCors(req, await updatePlan(env, ctx));
       }
       if (p === '/api/bar/join-code/regenerate' && req.method === 'POST') {
         return withCors(req, await regenerateJoinCode(env, ctx));

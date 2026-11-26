@@ -537,6 +537,19 @@ body.nxt .overlay{padding-top:76px}
       <label class="lbl">Bar join code</label>
       <input id="suCode" placeholder="6-digit code from the owner">
     </div>
+    <div id="suOwnerPlan">
+      <div class="ctlbl" style="margin-top:10px">Your bar tier</div>
+      <div class="seg" id="suTier">
+        <div class="chip sel" data-t="small">Small · KES 1,000</div>
+        <div class="chip" data-t="club">Club · KES 1,999</div>
+      </div>
+      <div class="ctlbl" style="margin-top:10px">How you want to pay</div>
+      <div class="seg" id="suPay">
+        <div class="chip sel" data-p="stk">M-Pesa prompt</div>
+        <div class="chip" data-p="manual">Pay Bill + code</div>
+      </div>
+      <p class="mini" style="margin-top:6px">Free for 7 days. Change either later in Owner mode.</p>
+    </div>
     <button class="btn primary" style="margin-top:4px" onclick="doSignup()">Create account</button>
     <div class="err" id="suErr"></div>
     <button class="btn ghost" style="margin-top:10px" id="backLogin" onclick="show('gate')">← Back to log in</button>
@@ -814,6 +827,10 @@ body.nxt .overlay{padding-top:76px}
         <p class="mini" style="margin-top:8px">Owner comps are listed separately and never counted as collected money.</p>
       </div>
 
+      <div class="card">
+        <div class="cardhead">Plan &amp; payment</div>
+        <div id="o-plan"></div>
+      </div>
       <div class="card">
         <div class="cardhead">Stock vs sold (live)</div>
         <div id="o-stock"></div>
@@ -1248,9 +1265,13 @@ function initGate(){
       c.onclick=()=>{
         document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel',x===c));
         const wrap=document.getElementById('suCodeWrap'); if(wrap) wrap.classList.toggle('hidden', c.dataset.m!=='staff');
+        const plan=document.getElementById('suOwnerPlan'); if(plan) plan.classList.toggle('hidden', c.dataset.m!=='owner');
         const lbl=document.getElementById('suNameLbl'); if(lbl) lbl.textContent=c.dataset.m==='staff'?'Your name':'Bar / business name';
         const ph=document.getElementById('suName'); if(ph){ ph.placeholder=c.dataset.m==='staff'?'Your name — how the boss knows you':'e.g. Mama Pima Gardens'; if(c.dataset.m==='owner'&&DB.bar) ph.value=DB.bar; }
       };
+    });
+    [['suTier','t'],['suPay','p']].forEach(([id,key])=>{
+      document.querySelectorAll('#'+id+' .chip').forEach(c=>{ c.onclick=()=>document.querySelectorAll('#'+id+' .chip').forEach(x=>x.classList.toggle('sel',x===c)); });
     });
   }catch(e){ console.error('initGate error', e); }
 }
@@ -1286,6 +1307,8 @@ function staffModeChips(ownerMode){
   document.querySelectorAll('#suMode .chip').forEach(x=>x.classList.toggle('sel', x.dataset.m===(ownerMode?'owner':'staff')));
   const wrap=document.getElementById('suCodeWrap');
   if(wrap) wrap.classList.toggle('hidden', ownerMode);
+  const plan=document.getElementById('suOwnerPlan');
+  if(plan) plan.classList.toggle('hidden', !ownerMode);
   const lbl=document.getElementById('suNameLbl'), inp=document.getElementById('suName');
   if(lbl) lbl.textContent=ownerMode?'Bar / business name':'Your name';
   if(inp){ inp.placeholder=ownerMode?'e.g. Mama Pima Gardens':'Your name — how the boss knows you'; inp.value=ownerMode&&DB&&DB.bar?'':(inp.value||''); }
@@ -1309,7 +1332,12 @@ async function doSignup(){
   const code=document.getElementById('suCodeWrap').classList.contains('hidden')?'':document.getElementById('suCode').value.trim();
   const body={name:document.getElementById('suName').value.trim(),email:document.getElementById('suEmail').value.trim(),password:document.getElementById('suPass').value,code};
   const owner=document.querySelector('#suMode .chip.sel').dataset.m==='owner';
-  if(owner) delete body.code; else if(!code){ err.textContent='Enter the bar join code from the owner'; err.style.display='block'; return; }
+  if(owner){
+    delete body.code;
+    const t=document.querySelector('#suTier .chip.sel'), p=document.querySelector('#suPay .chip.sel');
+    body.tier=t?t.dataset.t:'small';
+    body.pay_mode=p?p.dataset.p:'manual';
+  }else if(!code){ err.textContent='Enter the bar join code from the owner'; err.style.display='block'; return; }
   const r=await api('/api/register',body);
   if(!r.ok){ err.textContent=r.data.error||'Signup failed'; err.style.display='block'; return; }
   document.getElementById('lgEmail').value=body.email;
@@ -3366,6 +3394,7 @@ if('serviceWorker' in navigator){
     }
     renderStock(d);
     renderPrices(d);
+    renderPlan(d);
     renderTop(d.top);
     renderStocktake(d);
     renderShifts(d);
@@ -3405,6 +3434,32 @@ if('serviceWorker' in navigator){
     const input=oE('price-'+id); if(!input) return;
     const v=Math.max(0,Math.round(parseFloat(input.value)||0));
     doOp([{type:'set_price',oid:oid(),drink:id,k:'full',v}], ()=>toastRes('Price updated on every till'));
+  }
+
+  function renderPlan(d){
+    const el=oE('plan'); if(!el) return;
+    const s=SUB||{}, tier=s.plan||'small', pay=s.pay_mode||'manual';
+    const chip=(id,v,label,on)=>'<div class="chip'+(on?' sel':'')+'" data-v="'+v+'">'+label+'</div>';
+    el.innerHTML='<div class="subrow"><span>Current tier</span><b>'+(tier==='club'?'Big club':'Small bar')+' · '+kes(Math.round((s.price_cents||100000)/100))+'/month</b></div>'+
+      '<div class="ctlbl" style="margin-top:10px">Tier</div><div class="seg" id="o-planTier">'+
+        chip('tier','small','Small · KES 1,000',tier!=='club')+
+        chip('tier','club','Club · KES 1,999',tier==='club')+'</div>'+
+      '<div class="ctlbl" style="margin-top:10px">Payment option</div><div class="seg" id="o-planPay">'+
+        chip('pay','stk','M-Pesa prompt',pay!=='manual')+
+        chip('pay','manual','Pay Bill + code',pay==='manual')+'</div>'+
+      '<p class="mini" style="margin-top:6px">Choose either M-Pesa option. Manual mode shows the Pay Bill and account, then verifies the code you paste in the app.</p>'+
+      '<button class="btn primary" style="margin-top:10px" onclick="Owner.savePlan()">Save plan &amp; payment</button>';
+    el.querySelectorAll('.seg .chip').forEach(c=>{
+      c.onclick=()=>{ const seg=c.parentNode; seg.querySelectorAll('.chip').forEach(x=>x.classList.toggle('sel',x===c)); };
+    });
+  }
+  async function savePlan(){
+    const t=document.querySelector('#o-planTier .chip.sel'), p=document.querySelector('#o-planPay .chip.sel');
+    const r=await api('/api/bar/plan',{tier:t?t.dataset.v:'small',pay_mode:p?p.dataset.v:'manual'});
+    if(!r.ok){ toastRes(r.data.error||'Could not save plan'); return; }
+    SUB=r.data.subscription||SUB;
+    toastRes('Plan saved — your next payment uses this option');
+    loadSummary();
   }
 
   function renderStocktake(d){
@@ -3717,7 +3772,7 @@ if('serviceWorker' in navigator){
   }
   function stop(){ if(timer){ clearInterval(timer); timer=null; } }
 
-  window.Owner={start,stop,copyJoin,showPay,hidePay,requestStk,confirmPay,savePrice,takeAdj,takeSet,takeReset,saveTake,delDrink,empAdd,empEdit,empDel,payDebt,clearDebt,voidSale,copyReport,exportCsv,loadSummary};
+  window.Owner={start,stop,copyJoin,showPay,hidePay,requestStk,confirmPay,savePrice,savePlan,takeAdj,takeSet,takeReset,saveTake,delDrink,empAdd,empEdit,empDel,payDebt,clearDebt,voidSale,copyReport,exportCsv,loadSummary};
 })();
 </script>
 </body>
