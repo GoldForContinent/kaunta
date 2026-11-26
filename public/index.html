@@ -5,9 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0b0d0a">
 <meta name="description" content="Kaunta — the bar ledger that never sleeps. Fast offline sales recording, M-Pesa and deni tracking for small Kenyan bars. 7-day free trial, KES 999 or KES 1,999 a month, personal onboarding for the first 5 paying bars.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kaunta">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icon-512.png" sizes="512x512">
+<script src="install.js"></script>
 <title>Kaunta — The bar ledger that never sleeps</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -342,7 +349,7 @@ body.nxt .overlay{padding-top:76px}
       </details>
       <details>
         <summary>How do I install it on the phone?<span class="pm">+</span></summary>
-        <div class="a">Open this site (https://kaunta.pages.dev) in the phone's browser, tap <b>Install the app</b> → kaunta.html. Android Chrome shows "Add to Home screen" or an install prompt; on iPhone use Share → Add to Home Screen. It then opens full-screen and works offline.</div>
+        <div class="a">Open this site in the phone's browser and tap <b>Install the app on this phone</b>. Kaunta shows the exact steps for your phone: Chrome uses "Install app", iPhone uses Share → Add to Home Screen, Samsung Internet uses "Add page to → Home screen", and Xiaomi/Redmi users get a one-tap "Open in Chrome" option because the built-in Miui browser often hides the install button. The installed app opens full-screen and works offline.</div>
       </details>
       <details>
         <summary>Can more than one phone use the same bar?<span class="pm">+</span></summary>
@@ -393,13 +400,12 @@ body.nxt .overlay{padding-top:76px}
 <div id="instOv">
   <div class="ov">
     <button class="x" onclick="instClose()">&times;</button>
-    <h3>Install Kaunta on this phone</h3>
-    <p class="st">It takes about ten seconds and needs no password. Do it on the phone you'll keep behind the bar.</p>
-    <div class="step"><span class="n" id="s1">1</span><div><b id="t1">Tap the menu and "Install app"</b><i id="i1"></i></div></div>
-    <div class="step"><span class="n">2</span><div><b>Confirm the install pop-up</b><i>Tap "Install" when Android asks.</i></div></div>
-    <div class="step"><span class="n">3</span><div><b>Kaunta is now on your home screen</b><i>It opens full-screen and works offline.</i></div></div>
+    <h3 id="instTitle">Install Kaunta on this phone</h3>
+    <p class="st" id="instIntro">It takes about ten seconds and needs no password. Do it on the phone you'll keep behind the bar.</p>
+    <div id="instSteps"></div>
     <div class="btns">
       <button class="btn primary" onclick="installNow()">Install now</button>
+      <button class="btn ghost" id="chromeBtn" style="display:none" onclick="openChrome()">Open in Chrome — best on Xiaomi/Redmi</button>
       <button class="btn ghost" onclick="goApp()">I already have it — open the app</button>
     </div>
   </div>
@@ -407,21 +413,28 @@ body.nxt .overlay{padding-top:76px}
 
 <script>
 (function(){
-  if(!('serviceWorker' in navigator))return;
-  var ok=location.protocol==='https:'||['localhost','127.0.0.1'].indexOf(location.hostname)>-1;
-  if(!ok)return;
-  var deferred=null, ios=/iPhone|iPad|iPod/.test(navigator.userAgent);
-  window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
-  window.addEventListener('beforeinstallprompt',function(e){
-    e.preventDefault(); deferred=e;
-  });
+  var deferred=null;
+  var secure=location.protocol==='https:'||['localhost','127.0.0.1'].indexOf(location.hostname)>-1;
+  if(secure && 'serviceWorker' in navigator){
+    window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
+  }
+  // These events can fire even on browsers that never register a service worker,
+  // so keep them outside the guard — Xiaomi/Redmi users still get guidance.
+  window.addEventListener('beforeinstallprompt',function(e){ e.preventDefault(); deferred=e; });
   window.addEventListener('appinstalled',function(){ deferred=null; });
-  function fill(){
-    var t1=document.getElementById('t1'), i1=document.getElementById('i1'), s1=document.getElementById('s1');
-    if(ios){ s1.textContent='•'; t1.textContent='Tap Share, then "Add to Home Screen"';
-      i1.textContent='In Safari tap the Share box (square with arrow) at the bottom.'; }
-    else { s1.textContent='1'; t1.textContent='Tap the ⋮ menu, then "Install app" (or "Add to Home screen")';
-      i1.textContent="If you don't see it, install the app from your browser's menu instead."; }
+
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function renderGuide(){
+    var g=(window.KauntaInstall&&KauntaInstall.guide())||{title:'Install Kaunta on this phone',note:'',steps:[]};
+    var title=document.getElementById('instTitle'); if(title) title.textContent=g.title;
+    var intro=document.getElementById('instIntro'); if(intro) intro.textContent=g.note;
+    var box=document.getElementById('instSteps');
+    if(box) box.innerHTML=g.steps.map(function(s,i){
+      return '<div class="step"><span class="n">'+(i+1)+'</span><div><b>'+esc(s)+'</b></div></div>';
+    }).join('');
+    var cb=document.getElementById('chromeBtn');
+    var url=(window.KauntaInstall&&KauntaInstall.openInChromeUrl())||'';
+    if(cb){ cb.style.display=url?'':'none'; cb.onclick=function(){ if(url) location.href=url; }; }
   }
   window.instClose=function(){ document.getElementById('instOv').classList.remove('on'); };
   window.installNow=function(){
@@ -429,16 +442,21 @@ body.nxt .overlay{padding-top:76px}
       try{
         deferred.prompt();
         deferred.userChoice.then(function(){ deferred=null; }).catch(function(){});
-      }catch(_){}
-      return;
+        return;
+      }catch(_){ deferred=null; }
     }
-    fill(); document.getElementById('instOv').classList.add('on');
+    renderGuide();
+    document.getElementById('instOv').classList.add('on');
+  };
+  window.openChrome=function(){
+    var url=(window.KauntaInstall&&KauntaInstall.openInChromeUrl())||'';
+    if(url) location.href=url;
+    else window.open('https://play.google.com/store/apps/details?id=com.android.chrome','_blank');
   };
   window.goApp=function(){ location.href='kaunta.html'; };
   document.querySelectorAll('.cta-app').forEach(function(a){
     a.onclick=function(e){ window.installNow(); e.preventDefault(); return false; };
   });
-  setTimeout(function(){ fill(); },0);
 })();
 </script>
 

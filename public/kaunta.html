@@ -5,12 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0d0f0c">
 <meta name="description" content="Kaunta — the bar ledger that never sleeps. Sales, split-units, M-Pesa and debt in one tap.">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icon-512.png" sizes="512x512">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Kaunta">
+<script src="install.js"></script>
 <title>Kaunta — Bar Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -3213,36 +3217,45 @@ setTimeout(function(){ try{ boot(); }catch(e){ console.error('boot exception',e)
 /* =============== PWA: service worker + install ============ */
 let deferredPrompt=null;
 let installSeen=false;
-function showInstall(){
-  if(installSeen) return;
+const lsGet=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
+const lsSet=(k,v)=>{ try{ localStorage.setItem(k,v); }catch(e){} };
+function showInstall(force){
+  if(installSeen && !force) return;
+  if(!force && lsGet('kaunta_install_dismissed')==='1') return;
   installSeen=true;
   const d=document.getElementById('install');
   if(d) d.classList.remove('hidden');
 }
-function hideInstall(){ const d=document.getElementById('install'); if(d) d.classList.add('hidden'); }
-function installApp(){
-  if(deferredPrompt){
-    deferredPrompt.prompt();
-    deferredPrompt.userChoice.then(()=>{ deferredPrompt=null; hideInstall(); }).catch(()=>{});
-    return;
-  }
+function hideInstall(remember){
   const d=document.getElementById('install');
   if(d) d.classList.add('hidden');
-  const ios=/iPhone|iPad|iPod/.test(navigator.userAgent);
-  const html=ios
-    ? `<h3 class="serif">Install Kaunta</h3>
-       <p class="mini" style="margin-top:6px">Apple iPhones don't show an install button in the browser. It takes about ten seconds:</p>
-       <div class="ctlbl" style="margin-top:14px">1. Tap the Share box <span style="color:var(--dim)">(square with an up-arrow, bottom of Safari)</span></div>
-       <div class="ctlbl">2. Tap <b style="color:var(--gold)">"Add to Home Screen"</b></div>
-       <div class="ctlbl">3. Tap <b style="color:var(--gold)">"Add"</b> in the top-right</div>
-       <p class="mini" style="margin-top:8px">Kaunta now lives on your home screen and opens full-screen, offline-ready.</p>`
-    : `<h3 class="serif">Install Kaunta</h3>
-       <p class="mini" style="margin-top:6px">No native install button showed up — no problem:</p>
-       <div class="ctlbl" style="margin-top:14px">1. Tap the ⋮ menu in the Chrome bar</div>
-       <div class="ctlbl">2. Tap <b style="color:var(--gold)">"Add to Home screen"</b> (or "Install app")</div>
-       <div class="ctlbl">3. Tap <b style="color:var(--gold)">"Install"</b> on the pop-up</div>
-       <p class="mini" style="margin-top:8px">It opens full-screen and keeps working with no internet.</p>`;
-  openSheet(html+'<button class="btn primary" style="margin-top:14px;width:100%" onclick="closeSheet()">Got it</button>');
+  if(remember!==false) lsSet('kaunta_install_dismissed','1');
+}
+function installApp(){
+  if(deferredPrompt){
+    try{
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(()=>{ deferredPrompt=null; hideInstall(false); }).catch(()=>{});
+      return;
+    }catch(e){ deferredPrompt=null; }
+  }
+  hideInstall(false);
+  const g=(window.KauntaInstall&&KauntaInstall.guide())||{title:'Install Kaunta',note:'',steps:[]};
+  const steps=g.steps.map((s,i)=>'<div class="ctlbl" style="margin-top:'+(i?'8':'14')+'px">'+(i+1)+'. '+esc(s)+'</div>').join('');
+  const chrome=(window.KauntaInstall&&KauntaInstall.openInChromeUrl())||'';
+  const fallback=chrome?'<a class="btn primary" style="margin-top:14px;width:100%;justify-content:center;text-decoration:none" href="'+chrome+'">Open in Chrome (best on Xiaomi/Redmi)</a>':'';
+  const html='<h3 class="serif">'+esc(g.title)+'</h3>'+
+    '<p class="mini" style="margin-top:6px">'+esc(g.note)+'</p>'+steps+fallback+
+    '<button class="btn '+(chrome?'ghost':'primary')+'" style="margin-top:'+(chrome?'8':'14')+'px;width:100%" onclick="closeSheet()">Got it</button>';
+  openSheet(html);
+}
+function maybeShowInstall(){
+  if(!window.KauntaInstall || KauntaInstall.isStandalone()) return;
+  if(lsGet('kaunta_install_dismissed')==='1'||lsGet('kaunta_install_shown')==='1') return;
+  setTimeout(()=>{
+    showInstall();
+    lsSet('kaunta_install_shown','1');
+  },6000);
 }
 if('serviceWorker' in navigator){
   const ok = location.protocol==='https:' || ['localhost','127.0.0.1'].indexOf(location.hostname)>-1;
@@ -3269,11 +3282,12 @@ if('serviceWorker' in navigator){
       }).catch(()=>{});
     });
     window.addEventListener('beforeinstallprompt',e=>{
-      e.preventDefault(); deferredPrompt=e; showInstall();
+      e.preventDefault(); deferredPrompt=e; showInstall(true);
     });
-    window.addEventListener('appinstalled',()=>{ hideInstall(); if(deferredPrompt){ deferredPrompt=null; } });
+    window.addEventListener('appinstalled',()=>{ hideInstall(false); if(deferredPrompt){ deferredPrompt=null; } });
   }
 }
+maybeShowInstall();
 </script>
 <style>
 #splash{

@@ -1,4 +1,4 @@
-const VERSION = 'v8';
+const VERSION = 'v9';
 const CACHE = 'kaunta-' + VERSION;
 const ASSETS = [
   './index.html',
@@ -6,6 +6,7 @@ const ASSETS = [
   './owner.html',
   './admin.html',
   './manifest.webmanifest',
+  './install.js',
   './icon.svg',
   './icon-192.png',
   './icon-512.png',
