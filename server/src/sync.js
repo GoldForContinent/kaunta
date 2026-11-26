@@ -38,7 +38,16 @@ const TYPES = new Set(['sale', 'return_sale', 'add_debt', 'debt_payment', 'set_o
 
 // Who did it? Ops carry the actor in different fields depending on type.
 function actorId(op) { return String(op.uid || op.by_user || '').slice(0, 64); }
-function actorName(op) { return String(op.name || op.staff || op.by_name || op.who || '').slice(0, 80); }
+function actorName(op) {
+  // New ops arrive with an explicit `actor`, added by the client when the op is
+  // queued. Older ops fall back to their historic fields. `name`/`who` are not
+  // safe on set_bar/add_drink/debt ops, where they describe the bar, product or
+  // debtor rather than the person who made the change.
+  if (op.actor) return String(op.actor).slice(0, 80);
+  if (op.type === 'set_bar' || op.type === 'add_drink') return String(op.by_name || op.staff || '').slice(0, 80);
+  if (op.type === 'add_debt' || op.type === 'debt_payment') return String(op.by_name || op.staff || '').slice(0, 80);
+  return String(op.name || op.staff || op.by_name || op.who || '').slice(0, 80);
+}
 
 // ---- serving/stock helpers (mirrors the client's cup/keg math) ----
 function cupsOf(d) {
@@ -50,8 +59,14 @@ function cupsOf(d) {
 export function isKeg(d) {
   return !!(d && (+d.keg || (!d.keg && cupsOf(d).length)));
 }
-function isGoods(d) { return !!(d && +d.goods); }
+export function isGoods(d) { return !!(d && +d.goods); }
 function goodsHasSub(d) { return isGoods(d) && (+d.shot_ml || 0) > 0 && (+d.shot_price || 0) > 0; }
+// Physical stockMl expressed in the units the owner counts: bottles, packs or ml.
+export function shelfUnitsOf(info, ml) {
+  if (!info) return 0;
+  const raw = Math.max(0, Number(ml) || 0);
+  return isKeg(info) ? raw : raw / Math.max(1, parseFloat(info.size) || 1);
+}
 function cupRates(d) {
   return cupsOf(d).map(c => (c && +c.ml > 0 && +c.price > 0) ? (+c.price) / (+c.ml) : 0).filter(r => r > 0);
 }
@@ -95,7 +110,7 @@ function serverGoodsRates(d) {
   if (goodsHasSub(d)) rates.push(Math.floor(Math.max(1, +d.size || 1) / Math.max(1, +d.shot_ml)) * (+d.shot_price || 0));
   return rates.filter(r => r > 0);
 }
-function serverBand(d, units) {
+export function serverBand(d, units) {
   const n = Math.max(0, Number(units) || 0);
   const rates = isKeg(d) ? cupRates(d) : (isGoods(d) ? serverGoodsRates(d) : serverBottleRates(d));
   if (!rates.length) return { min: 0, max: 0 };

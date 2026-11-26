@@ -4,6 +4,7 @@ import { json, corsHeaders } from './util.js';
 import { register, login, logout, requireAuth, changePassword, adminResetPassword, barStaff, staffLogin, addStaff, updateStaff, deleteStaff, regenerateJoinCode } from './auth.js';
 import { syncHandler, opHandler } from './sync.js';
 import { summaryHandler } from './summary.js';
+import { storyHandler } from './story.js';
 import { auditLog } from './audit.js';
 import { payRequest, payCallback, payVerify, payInfo, updatePlan } from './billing.js';
 import {
@@ -101,6 +102,9 @@ export default {
       }
       if (p === '/api/summary' && req.method === 'GET') {
         return withCors(req, await summaryHandler(env, ctx, url.searchParams));
+      }
+      if (p === '/api/story' && req.method === 'GET') {
+        return withCors(req, await storyHandler(env, ctx, url.searchParams));
       }
       if (p === '/api/pay/request' && req.method === 'POST') {
         return withCors(req, await payRequest(env, ctx));

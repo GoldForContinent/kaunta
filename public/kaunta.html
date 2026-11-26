@@ -408,6 +408,15 @@ nav{
 .modeswitch button{border:0;background:transparent;color:var(--dim);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;padding:6px 10px;border-radius:999px;cursor:pointer}
 .modeswitch button.on{background:rgba(233,185,92,.16);color:var(--gold)}
 #view-owner .tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.story-lead{font-size:12.5px;line-height:1.65;color:var(--dim);margin-bottom:8px}
+.story-line{font-size:12.5px;line-height:1.65;color:var(--paper);padding:7px 0;border-bottom:1px solid var(--line)}
+.story-line:last-child{border-bottom:none}
+.story-line b{color:var(--gold)}
+.story-flag{margin-top:8px;padding:9px 11px;border-radius:11px;font-size:11.5px;line-height:1.55;border:1px solid rgba(255,92,56,.3);background:rgba(255,92,56,.08);color:#ffb9a3}
+.story-flag.info{border-color:rgba(233,185,92,.28);background:rgba(233,185,92,.07);color:var(--gold)}
+.story-check{margin-top:10px;padding:11px 12px;border-radius:12px;border:1px solid var(--line2);background:rgba(255,255,255,.03);font-size:12px;line-height:1.6}
+.story-check.bad{border-color:rgba(255,92,56,.38);background:rgba(255,92,56,.08)}
+#o-weekDays .chip{padding:8px 12px;font-size:11px}
 #o-payov .ov-card{max-height:86vh;overflow:auto}
 @media(min-width:700px){#app{max-width:560px}}
 </style>
@@ -802,6 +811,16 @@ body.nxt .overlay{padding-top:76px}
         </div>
       </div>
 
+      <div class="card" id="o-weekCard" style="margin-top:12px">
+        <div class="cardhead">Last 7 days · simple story <span id="o-weekBadge" style="margin-left:auto;font-size:9px;color:var(--dim)"></span></div>
+        <div class="seg" id="o-weekDays" style="margin-bottom:10px"></div>
+        <div id="o-weekStory"><div class="empty">Loading the week…</div></div>
+        <div class="rowflex" style="gap:8px;margin-top:10px">
+          <button class="btn small ghost" style="flex:1" onclick="Owner.copyWeek()">Copy this day</button>
+          <button class="btn small ghost" style="flex:1" onclick="Owner.copyWeek(true)">Copy whole week</button>
+        </div>
+      </div>
+
       <div class="grid2">
         <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--gold)"></span>Cash today</div><div class="val money" id="o-sCash">KES 0</div></div>
         <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--mpesa)"></span>M-Pesa today</div><div class="val money grn" id="o-sMpesa">KES 0</div></div>
@@ -995,8 +1014,18 @@ const storeCloud=()=>{
   if(API_BASE) localStorage.setItem(K_BASE,API_BASE);
 };
 
+// Stamp the person on EVERY queued change, not just sales. Without this the
+// owner cannot tell who added stock, set an opening count or changed a price.
+function withActor(payload){
+  const p=Object.assign({},payload);
+  let st=null;
+  try{ if(typeof curStaff==='function') st=curStaff(); }catch(e){}
+  if(!p.uid && st && st.id) p.uid=st.id;
+  if(!p.actor && st && st.name) p.actor=st.name;
+  return p;
+}
 function enqueue(type,payload){
-  outbox.push(Object.assign({type,oid:oid()},payload));
+  outbox.push(withActor(Object.assign({type,oid:oid()},payload)));
   localStorage.setItem(K_OUT,JSON.stringify(outbox));
   sync();
 }
@@ -3320,6 +3349,7 @@ maybeShowInstall();
 
   let JOIN_CODE='', LAST_SUMMARY=null, DEBTS_SNAPSHOT=[], SUB=null, timer=null;
   let TAKE_COUNTS={}, TAKE_STOCK={}, TAKE_DIRTY={};
+  let STORY=null, STORY_DAY=6, storyAt=0, storyBusy=false;
 
   function toastRes(m){
     const t=document.createElement('div');
@@ -3351,10 +3381,19 @@ maybeShowInstall();
   }
 
   async function doOp(ops, after){
-    const r=await api('/api/op',{ops});
+    // Direct owner tools also get an actor, so a stock-take or price change can
+    // be attributed later even when it is read weeks after the fact.
+    const stamped=(ops||[]).map(op=>{
+      const p=Object.assign({},op);
+      if(!p.uid && PROFILE) p.uid=PROFILE.id;
+      if(!p.actor && PROFILE) p.actor=PROFILE.name;
+      return p;
+    });
+    const r=await api('/api/op',{ops:stamped});
     if(!r.ok){ alert(r.data.error||'Failed — check subscription'); return; }
     if(after) after();
     loadSummary();
+    loadStory(true);
   }
   async function loadSummary(){
     if(typeof MODE!=='undefined' && MODE!=='owner') return;
@@ -3417,6 +3456,58 @@ maybeShowInstall();
     DEBTS_SNAPSHOT=d.debts||[];
     renderDebts(d);
     renderFeed(d.feed);
+  }
+
+  /* ---- 7-day story: plain-language reconstruction, from the server ---- */
+  async function loadStory(force){
+    if(typeof MODE!=='undefined' && MODE!=='owner') return;
+    if(storyBusy) return;
+    if(!force && Date.now()-storyAt<60000) return;
+    storyBusy=true; storyAt=Date.now();
+    const tz=-new Date().getTimezoneOffset();
+    const r=await api('/api/story?days=7&tz='+tz,'','GET');
+    storyBusy=false;
+    if(!r.ok){
+      if(r.data.error==='Not logged in'||r.data.error==='Session expired — log in again') logout();
+      const el=oE('weekStory'); if(el&&!STORY) el.innerHTML='<div class="empty">Could not load the 7-day story.</div>';
+      return;
+    }
+    STORY=r.data;
+    if(STORY_DAY<0||STORY_DAY>=STORY.days.length) STORY_DAY=Math.max(0,STORY.days.length-1);
+    renderStory();
+  }
+  function renderStory(){
+    const daysEl=oE('weekDays'), el=oE('weekStory');
+    if(!daysEl||!el||!STORY) return;
+    const w=STORY.week||{};
+    const badge=oE('weekBadge');
+    if(badge) badge.textContent=(w.flags||[]).length?((w.flags||[]).length+' to look at'):'nothing unusual';
+    daysEl.innerHTML=STORY.days.map((d,i)=>'<div class="chip'+(i===STORY_DAY?' sel':'')+'" onclick="Owner.selectStoryDay('+i+')">'+esc(d.label)+' <span style="opacity:.65;font-size:9px">'+esc(d.date)+'</span>'+(d.flags.some(f=>f.level==='warn')?' <span style="color:var(--ember)">•</span>':'')+'</div>').join('');
+    const d=STORY.days[STORY_DAY];
+    if(!d){ el.innerHTML='<div class="empty">No days to show yet.</div>'; return; }
+    const head='<div class="story-lead"><b>'+esc(d.full_label)+'</b> · '+d.totals.sales+' sales · '+kes(d.totals.collected)+' collected · '+kes(d.totals.owner)+' owner takes</div>';
+    const lines='<div class="story-line"><b>Opening:</b> '+esc(d.opening_text)+'</div>'
+      +d.sentences.map(s=>'<div class="story-line">'+esc(s)+'</div>').join('')
+      +'<div class="story-line"><b>Closing:</b> '+esc(d.closing_text)+'</div>';
+    const checks=(d.checks||[]).map(k=>'<div class="story-check'+(k.ok?'':' bad')+'"><b>Money check</b> · '+esc(k.ok?'Looks okay':'CHECK THIS DAY')+
+      '<br>Expected '+kes(k.min)+' – '+kes(k.max)+' · on ledger '+kes(k.recorded)+
+      '<br><span style="color:var(--dim)">Counted at '+esc(hhmm(k.t))+' by '+esc(k.actor.name)+' · sales since '+esc(hhmm(k.from))+'</span></div>').join('');
+    const flags=(d.flags||[]).map(f=>'<div class="story-flag'+(f.level==='info'?' info':'')+'">'+esc(f.text)+'</div>').join('');
+    const week=(w.sentences||[]).map(s=>'<div class="story-line"><b>Week:</b> '+esc(s)+'</div>').join('');
+    el.innerHTML=head+lines+checks+flags+(week?'<div class="story-lead" style="margin-top:10px">'+week+'</div>':'');
+  }
+  function selectStoryDay(i){
+    STORY_DAY=Math.max(0,Math.min((STORY&&STORY.days.length||1)-1,i));
+    renderStory();
+  }
+  function copyWeek(all){
+    if(!STORY){ toastRes('The 7-day story is still loading'); return; }
+    const line=d=>d.full_label+'\n'+d.sentences.map(s=>'- '+s).join('\n');
+    const out=all
+      ? (STORY.week.sentences||[]).join('\n')+'\n\n'+(STORY.days||[]).map(line).join('\n\n')
+      : line(STORY.days[STORY_DAY]);
+    if(navigator.clipboard) navigator.clipboard.writeText(out).then(()=>toastRes(all?'Week copied':'Day copied')).catch(()=>toastRes(out));
+    else toastRes(out);
   }
 
   function renderStock(d){
@@ -3781,12 +3872,13 @@ maybeShowInstall();
 
   function start(){
     loadSummary();
+    loadStory(true);
     if(!timer) timer=setInterval(()=>{ if(typeof MODE==='undefined'||MODE==='owner') loadSummary(); },15000);
     if(!window._ownerOnline){ window._ownerOnline=true; window.addEventListener('online',()=>{ if(typeof MODE==='undefined'||MODE==='owner') loadSummary(); }); }
   }
   function stop(){ if(timer){ clearInterval(timer); timer=null; } }
 
-  window.Owner={start,stop,copyJoin,showPay,hidePay,requestStk,confirmPay,savePrice,savePlan,takeAdj,takeSet,takeReset,saveTake,delDrink,empAdd,empEdit,empDel,payDebt,clearDebt,voidSale,copyReport,exportCsv,loadSummary};
+  window.Owner={start,stop,copyJoin,showPay,hidePay,requestStk,confirmPay,savePrice,savePlan,takeAdj,takeSet,takeReset,saveTake,delDrink,empAdd,empEdit,empDel,payDebt,clearDebt,voidSale,copyReport,exportCsv,loadSummary,loadStory,renderStory,selectStoryDay,copyWeek};
 })();
 </script>
 </body>
