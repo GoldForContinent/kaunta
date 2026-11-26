@@ -1341,7 +1341,8 @@ function setMode(m){
   }
   const bn=document.getElementById('barName');
   if(bn) bn.innerHTML=((DB&&DB.bar)||'Kaunta')+'<small>'+(MODE==='owner'?'Owner · Bar Ledger':'Bar Ledger')+'</small>';
-  try{ history.replaceState(null,'','kaunta.html'+(MODE==='owner'?'?mode=owner':'')); }catch(e){}
+  // Persist the owner's choice across reloads; staff always stay on plain kaunta.html.
+  try{ history.replaceState(null,'','kaunta.html'+(MODE==='owner'?'?mode=owner':(isOwner?'?mode=till':''))); }catch(e){}
   if(MODE==='owner'){
     if(window.Owner) Owner.start();
   }else{
