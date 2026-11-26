@@ -482,6 +482,8 @@ async function makeStmts(DB, barId, ops, now) {
 }
 
 export async function opHandler({ DB }, ctx, body) {
+  // Direct writes are an owner tool. Staff record sales through /api/sync.
+  if (!ctx.user || ctx.user.role !== 'owner') return json({ error: 'Owner only' }, 403);
   const barId = ctx.bar.id;
   const sub = await subOf(DB, barId);
   if (sub.status === 'suspended') return json({ ok: false, error: 'suspended', subscription: sub }, 402);

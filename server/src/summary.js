@@ -4,6 +4,8 @@ import { json } from './util.js';
 import { subOf, pourMlOf, isKeg } from './sync.js';
 
 export async function summaryHandler({ DB }, ctx, q) {
+  // The merged shell gates Owner mode in the UI; enforce it here too.
+  if (!ctx.user || ctx.user.role !== 'owner') return json({ error: 'Owner only' }, 403);
   const barId = ctx.bar.id;
   const now = Date.now();
   const from = Math.min(now, Math.max(0, parseInt(q.get('from')) || 0) || 0);

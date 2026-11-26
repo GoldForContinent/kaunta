@@ -399,6 +399,12 @@ nav{
 .err{color:var(--ember);font-size:12px;font-weight:700;margin-top:8px;display:none}
 .ovset{width:100%;text-align:left;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04);color:var(--dim)}
 .ovset input{width:100%;margin-top:6px}
+/* one app, two roles: the switch only exists for the bar owner */
+.modeswitch{display:flex;align-items:center;gap:2px;padding:3px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.03);flex:none}
+.modeswitch button{border:0;background:transparent;color:var(--dim);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;padding:6px 10px;border-radius:999px;cursor:pointer}
+.modeswitch button.on{background:rgba(233,185,92,.16);color:var(--gold)}
+#view-owner .tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+#o-payov .ov-card{max-height:86vh;overflow:auto}
 @media(min-width:700px){#app{max-width:560px}}
 </style>
 </head>
@@ -542,9 +548,14 @@ body.nxt .overlay{padding-top:76px}
   <div class="ov-card" id="lockCard"></div>
 </div>
 
-<!-- pay sheet -->
+<!-- pay sheet (till) -->
 <div id="payov" class="overlay hidden">
   <div class="ov-card" id="payCard"></div>
+</div>
+
+<!-- pay sheet (owner mode) -->
+<div id="o-payov" class="overlay hidden">
+  <div class="ov-card" id="o-payCard"></div>
 </div>
 
 <!-- sale flash -->
@@ -573,9 +584,13 @@ body.nxt .overlay{padding-top:76px}
         <div class="mark"><svg class="ic"><use href="#i-count"/></svg></div>
         <div class="brand" id="barName">Kaunta<small>Bar Ledger</small></div>
       </div>
-      <div class="hd-right">
+      <div class="hd-right" id="tillHead">
         <div class="shift">Shift <b id="shiftTime">0m</b><span id="shiftPill" class="hidden"></span></div>
         <div class="live">Today's take<b id="hdTotal" class="money">KES 0</b></div>
+      </div>
+      <div class="modeswitch hidden" id="modeSwitch">
+        <button type="button" data-mode="till" onclick="setMode('till')">Till</button>
+        <button type="button" data-mode="owner" onclick="setMode('owner')">Owner</button>
       </div>
       <button class="gear" onclick="openSettings()"><svg class="ic"><use href="#i-gear"/></svg></button>
     </div>
@@ -745,6 +760,96 @@ body.nxt .overlay{padding-top:76px}
       </div>
       <div id="stockList" style="margin-top:12px"></div>
       <button class="btn ghost" onclick="newDay()" style="margin-top:10px">Start New Day · reset shift</button>
+    </section>
+
+    <!-- OWNER: same bar, same data, more power. Only reachable when PROFILE.role === 'owner'. -->
+    <section id="view-owner" class="view hidden">
+      <h2>Owner desk</h2>
+      <p class="sub">The whole bar in one place. Switch to Till whenever you are behind the counter.</p>
+
+      <div class="tools">
+        <span class="pill2" id="o-netPill">…</span>
+        <span class="pill2" id="o-subPill">…</span>
+        <span class="pill2 gold" id="o-joinPill" title="Share this code with your bartenders" onclick="Owner.copyJoin()" style="cursor:pointer">JOIN&nbsp;<b id="o-joinCode" style="letter-spacing:2px">—</b></span>
+      </div>
+
+      <div class="hero">
+        <div id="o-lockBanner"></div>
+        <div class="lbl">Collected today (cash + M-Pesa)</div>
+        <div class="total"><span class="k">KES</span><span class="money fig-lg" id="o-heroTotal">0</span></div>
+        <div class="foot">
+          <span>Debt today <b id="o-heroDeni" class="money red">KES 0</b></span>
+          <span>Returns <b id="o-heroReturns" class="money red">KES 0</b></span>
+          <span>Sales <b id="o-heroSales" class="money grn">0</b></span>
+          <span>Shift <b id="o-heroShift">—</b></span>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--gold)"></span>Cash today</div><div class="val money" id="o-sCash">KES 0</div></div>
+        <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--mpesa)"></span>M-Pesa today</div><div class="val money grn" id="o-sMpesa">KES 0</div></div>
+        <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--ember)"></span>Debt today</div><div class="val money red" id="o-sDebtDay">KES 0</div></div>
+        <div class="stat"><div class="lbl"><span class="cdot" style="background:#f4ead6"></span>Sales today</div><div class="val" id="o-sCount" style="color:var(--paper)">0</div></div>
+        <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--ember)"></span>Returns today</div><div class="val money red" id="o-sReturns">KES 0</div></div>
+        <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--ember)"></span>Items returned</div><div class="val" id="o-sReturnCount" style="color:var(--paper)">0</div></div>
+        <div class="stat" style="grid-column:1/-1;border-color:rgba(147,183,230,.3)">
+          <div class="lbl"><span class="cdot" style="background:#93b7e6"></span>Owner / comps · stock used, no money collected</div>
+          <div class="val money blue" id="o-sOwner">KES 0</div>
+          <div class="mini" style="margin:6px 0 0">Tagged at the till so staff are never blamed. Excluded from collected money and from the expected-till check.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cardhead">Sales pace today</div>
+        <div class="heat" id="o-heat"></div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--dim);margin-top:5px"><span>10am</span><span>2pm</span><span>6pm</span><span>10pm</span></div>
+      </div>
+
+      <div class="card">
+        <div class="cardhead">Reports &amp; export</div>
+        <div class="rowflex" style="gap:8px">
+          <button class="btn small ghost" style="flex:1" onclick="Owner.copyReport()">Copy day report</button>
+          <button class="btn small ghost" style="flex:1" onclick="Owner.exportCsv()">Download CSV</button>
+        </div>
+        <p class="mini" style="margin-top:8px">Owner comps are listed separately and never counted as collected money.</p>
+      </div>
+
+      <div class="card">
+        <div class="cardhead">Stock vs sold (live)</div>
+        <div id="o-stock"></div>
+      </div>
+      <div class="card">
+        <div class="cardhead">Prices · change once, every till updates</div>
+        <div id="o-prices"></div>
+      </div>
+      <div class="card">
+        <div class="cardhead">Stock-take · cash up</div>
+        <div id="o-stocktake"></div>
+      </div>
+      <div class="card">
+        <div class="cardhead">Staff &amp; shifts</div>
+        <div id="o-shifts"></div>
+      </div>
+      <div class="card">
+        <div class="cardhead">Employees</div>
+        <div id="o-employees"></div>
+      </div>
+      <div class="card">
+        <div class="cardhead">Top movers today</div>
+        <div id="o-top"></div>
+      </div>
+      <div class="card">
+        <div class="cardhead" style="color:var(--ember)">Debt ledger <span style="margin-left:auto" id="o-debtSub"></span></div>
+        <div id="o-debts"></div>
+      </div>
+      <div class="card">
+        <div class="cardhead">Live feed <span style="margin-left:auto;font-size:9px;color:var(--dim)">Void reverses stock + money + debt</span></div>
+        <div id="o-feed"></div>
+      </div>
+      <div class="card">
+        <div class="cardhead">Activity log</div>
+        <div id="o-audit"></div>
+      </div>
     </section>
   </main>
 
@@ -1094,7 +1199,7 @@ async function sync(){
     SUB=d.subscription||SUB; lastLinked=Date.now();
     storeCloud(); save();
     leaveLock();
-    renderDash(); tickSub();
+    if(MODE==='till'){ renderDash(); tickSub(); }
     return d;
   }catch(e){ return false; }
   finally{ syncing=false; scheduleSync(); }
@@ -1128,7 +1233,7 @@ function lockBack(){ sync(); }
 
 /* ---- auth UI ---- */
 function show(id){
-  const all=['gate','signup','lock','payov']; let any=false;
+  const all=['gate','signup','lock','payov','o-payov']; let any=false;
   all.forEach(x=>{ const el=document.getElementById(x); el.classList.toggle('hidden', x!==id); if(x===id&&!el.classList.contains('hidden')) any=true; });
   if(id==='back') any=false;
   document.body.classList.toggle('lock', any);
@@ -1212,13 +1317,47 @@ async function doSignup(){
   toast('Account created — logging you in');
   await doLogin();
 }
-const NEXT=new URLSearchParams(location.search).get('next');
-function goNext(){
-  if(NEXT!=='owner.html') return;
-  if(!PROFILE) return;                       // session expired — the gate stays up, we decide after sign-in
-  if(PROFILE.role==='owner'){ location.replace('owner.html'); return; }
-  history.replaceState(null,'','kaunta.html');
-  toast('The owner dashboard is for bar owners — this is the counter app');
+/* ---- one app, two roles: Till for staff, Owner for the bar owner ---- */
+const QS=new URLSearchParams(location.search);
+const NEXT=QS.get('next');                    // legacy bookmarks: ?next=owner.html
+// No explicit mode means the owner lands in Owner mode; staff are always forced to Till.
+const REQ_MODE=(QS.get('mode')==='till')?'till':((QS.get('mode')==='owner'||NEXT==='owner.html')?'owner':null);
+let MODE='till';
+function setMode(m){
+  const isOwner=!!(PROFILE&&PROFILE.role==='owner');
+  MODE=(m==='owner'&&isOwner)?'owner':'till';
+  const ov=document.getElementById('view-owner');
+  const nav=document.querySelector('#app nav');
+  const head=document.getElementById('tillHead');
+  if(ov) ov.classList.toggle('hidden', MODE!=='owner');
+  document.querySelectorAll('#app main > section.view:not(#view-owner)').forEach(s=>s.classList.add('hidden'));
+  if(nav) nav.classList.toggle('hidden', MODE==='owner');
+  if(head) head.classList.toggle('hidden', MODE==='owner');
+  const sw=document.getElementById('modeSwitch');
+  if(sw){
+    // Staff must never even see the control — remove it, don't just hide it.
+    if(!isOwner) sw.remove();
+    else sw.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.mode===MODE));
+  }
+  const bn=document.getElementById('barName');
+  if(bn) bn.innerHTML=((DB&&DB.bar)||'Kaunta')+'<small>'+(MODE==='owner'?'Owner · Bar Ledger':'Bar Ledger')+'</small>';
+  try{ history.replaceState(null,'','kaunta.html'+(MODE==='owner'?'?mode=owner':'')); }catch(e){}
+  if(MODE==='owner'){
+    if(window.Owner) Owner.start();
+  }else{
+    if(window.Owner) Owner.stop();
+    go('dash');
+  }
+  window.scrollTo(0,0);
+}
+function applyRoleMode(){
+  if(!PROFILE) return;                        // session expired — decide after sign-in
+  if(PROFILE.role!=='owner'){
+    if(REQ_MODE==='owner') toast('Owner mode is for the bar owner — this is the counter');
+    setMode('till');
+  }else{
+    setMode(REQ_MODE==='till'?'till':'owner');
+  }
 }
 async function afterAuth(reconnect){
   try{
@@ -1256,11 +1395,11 @@ async function afterAuth(reconnect){
       if(!s) break;
       if((s.changes||[]).length<500) break;
     }
-    renderDash(); tickSub();
-    goNext();
+    if(MODE==='till'){ renderDash(); tickSub(); }
+    applyRoleMode();
   }catch(e){
     console.error('afterAuth error', e);
-    try{ show('gate'); }catch(e2){}
+    if(!TOKEN) try{ show('gate'); }catch(e2){}
   }
 }
 async function migrateToCloud(){
@@ -3024,7 +3163,7 @@ function tick(){
     const greetEl=document.getElementById('greet'); if(greetEl) greetEl.innerHTML=g+', <span class="em">Boss.</span>';
     const dateEl=document.getElementById('dashDate'); if(dateEl) dateEl.textContent=now.toDateString()+' · '+now.toLocaleDateString('en-KE',{weekday:'long'})+' · live books';
     const modePill=document.getElementById('modePill'); if(modePill) modePill.innerHTML = navigator.onLine ? '<span style="color:var(--gold)">●</span> Online · auto-sync' : '<span style="color:var(--dim)">●</span> Offline · recording locally';
-    if(viewDone.dash) renderDash();
+    if(viewDone.dash && MODE==='till') renderDash();
   }catch(e){ console.error('tick error', e); }
 }
 const viewDone={dash:false};
@@ -3033,10 +3172,14 @@ window.addEventListener('offline',()=>tick());
 document.getElementById('barName').innerHTML = DB.bar+'<small>Bar Ledger</small>';
 
 /* splash + boot — immediate render, no fade animation */
-window.onerror=function(msg,url,line,col,err){ console.error('UNCAUGHT',msg,url,line,col,err&&err.stack); try{ show('gate'); }catch(e){} return true; };
-window.addEventListener('unhandledrejection',e=>{ console.error('UNHANDLED REJECTION',e.reason); try{ show('gate'); }catch(e2){} });
+// Unexpected render errors used to force the login gate; with two modes that
+// would yank an owner (or a selling bartender) out of a working session.
+// Only send unauthenticated users back to the gate.
+const gateOnError=()=>{ if(!TOKEN) try{ show('gate'); }catch(e){} };
+window.onerror=function(msg,url,line,col,err){ console.error('UNCAUGHT',msg,url,line,col,err&&err.stack); gateOnError(); return true; };
+window.addEventListener('unhandledrejection',e=>{ console.error('UNHANDLED REJECTION',e.reason); gateOnError(); });
 const s=document.getElementById('splash'); if(s){ s.style.display='none'; }
-setTimeout(function(){ try{ boot(); }catch(e){ console.error('boot exception',e); try{ show('gate'); }catch(e2){} } },0);
+setTimeout(function(){ try{ boot(); }catch(e){ console.error('boot exception',e); gateOnError(); } },0);
 
 /* =============== PWA: service worker + install ============ */
 let deferredPrompt=null;
@@ -3115,5 +3258,466 @@ if('serviceWorker' in navigator){
 #splash h1{font-size:34px;margin-top:20px;font-weight:700;color:var(--paper)}
 #splash p{color:var(--dim);margin-top:8px;font-size:12.5px;letter-spacing:.4px}
 </style>
+
+<!-- ================================================================
+     OWNER MODE — same bar, same sync, more power.
+     Kept in a namespace with prefixed IDs so the Till stays untouched.
+     ================================================================ -->
+<script>
+(function(){
+  const oE=id=>document.getElementById('o-'+id);
+  const hhmm=ms=>new Date(ms).toLocaleTimeString('en-KE',{hour:'2-digit',minute:'2-digit'});
+  const dstr=ms=>new Date(ms).toLocaleDateString('en-KE',{day:'numeric',month:'short'});
+  const cap=s=>String(s||'').charAt(0).toUpperCase()+String(s||'').slice(1);
+  const fmtShift=(openMs,serverMs)=>{
+    const mins=Math.max(0,Math.round(((serverMs||Date.now())-openMs)/60000));
+    return (mins>=60?Math.floor(mins/60)+'h ':'')+(mins%60)+'m';
+  };
+  const PAY_LBL={cash:'Cash',mpesa:'M-Pesa',deni:'Debt',owner:'Owner'};
+
+  let JOIN_CODE='', LAST_SUMMARY=null, DEBTS_SNAPSHOT=[], SUB=null, timer=null;
+  let TAKE_COUNTS={}, TAKE_STOCK={}, TAKE_DIRTY={};
+
+  function toastRes(m){
+    const t=document.createElement('div');
+    t.textContent=m;
+    t.style.cssText='position:fixed;left:50%;bottom:30px;transform:translateX(-50%);z-index:400;background:linear-gradient(150deg,#fdf3d8,#e9d5a0);color:#211407;font-weight:800;font-size:13px;padding:13px 20px;border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.5)';
+    document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
+  }
+  function nowPill(){
+    const el=oE('netPill'); if(!el) return;
+    el.textContent=navigator.onLine?'● Online':'● Offline';
+    el.className='pill2 '+(navigator.onLine?'ok':'warn');
+  }
+  function copyJoin(){
+    const c=(JOIN_CODE||'').trim(); if(!c) return;
+    const ta=document.createElement('textarea'); ta.value=c;
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); }catch(e){}
+    ta.remove(); toastRes('Join code copied: '+c);
+  }
+  function countUp(id,to){
+    const el=oE(id); if(!el) return;
+    const start=parseInt(el.dataset.v||'0')||0, dur=500, t0=performance.now();
+    el.dataset.v=to;
+    (function f(t){
+      const p=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-p,3);
+      el.textContent=kes(Math.round(start+(to-start)*e));
+      if(p<1) requestAnimationFrame(f);
+    })(performance.now());
+  }
+
+  async function doOp(ops, after){
+    const r=await api('/api/op',{ops});
+    if(!r.ok){ alert(r.data.error||'Failed — check subscription'); return; }
+    if(after) after();
+    loadSummary();
+  }
+  async function loadSummary(){
+    if(typeof MODE!=='undefined' && MODE!=='owner') return;
+    const from=new Date(); from.setHours(0,0,0,0);
+    window._SFROM=from.getTime();
+    const tz=-from.getTimezoneOffset();
+    const r=await api('/api/summary?from='+from.getTime()+'&until='+Date.now()+'&tz='+tz,'');
+    if(!r.ok){
+      if(r.data.error==='Not logged in'||r.data.error==='Session expired — log in again') logout();
+      return;
+    }
+    const d=r.data; LAST_SUMMARY=d;
+    SUB=d.subscription;
+    if(d.bar&&d.bar.join_code){
+      JOIN_CODE=d.bar.join_code;
+      const jc=oE('joinCode'); if(jc) jc.textContent=JOIN_CODE;
+      const jp=oE('joinPill'); if(jp) jp.classList.remove('hidden');
+    }
+    const s=subLabel(SUB), sp=oE('subPill');
+    if(sp){ sp.textContent=s.t; sp.className='pill2 '+s.c; }
+    nowPill();
+
+    const lb=oE('lockBanner');
+    if(lb){
+      if(SUB&&(SUB.locked||SUB.status==='suspended')){
+        lb.innerHTML='<div class="banner warn"><div><b>Subscription paused — sales data is not being accepted.</b><p>Pay to restore live syncing for your bar.</p></div><button class="btn small primary" onclick="Owner.showPay()">Pay KES '+Math.round((SUB.price_cents||50000)/100)+'</button></div>';
+      }else if(SUB&&(SUB.status==='trial'||SUB.status==='grace')){
+        lb.innerHTML='<div class="banner"><div><b>'+s.t+'</b><p>'+(SUB.status==='trial'?'Add M-Pesa to keep the counters running after the trial.':'Renew before the grace period ends.')+'</p></div><button class="btn small primary" onclick="Owner.showPay()">Pay now</button></div>';
+      }else lb.innerHTML='';
+    }
+
+    countUp('heroTotal', d.totals.total);
+    const set=(id,v)=>{ const el=oE(id); if(el) el.textContent=v; };
+    set('heroDeni',kes(d.totals.deni));
+    set('heroSales',d.totals.count);
+    set('heroReturns',kes(d.totals.returns||0));
+    set('heroShift',fmtShift(d.shift_open,d.server_time));
+    set('sCash',kes(d.totals.cash));
+    set('sMpesa',kes(d.totals.mpesa));
+    set('sDebtDay',kes(d.totals.deni));
+    set('sCount',d.totals.count);
+    set('sReturns',kes(d.totals.returns||0));
+    set('sReturnCount',d.totals.returnsCount||0);
+    set('sOwner',kes(d.totals.owner||0));
+
+    const hkes=d.hourlyKes||new Array(24).fill(0), max=Math.max(...hkes,1);
+    const heat=oE('heat');
+    if(heat){
+      heat.title='Pace today (KES/hour)';
+      heat.innerHTML=hkes.map(n=>'<i '+((n>0)?'data-v':'')+' style="opacity:'+(n>0?.5+n/max*.5:1)+'"></i>').join('');
+    }
+    renderStock(d);
+    renderPrices(d);
+    renderTop(d.top);
+    renderStocktake(d);
+    renderShifts(d);
+    renderEmployees();
+    renderAudit();
+    DEBTS_SNAPSHOT=d.debts||[];
+    renderDebts(d);
+    renderFeed(d.feed);
+  }
+
+  function renderStock(d){
+    const el=oE('stock'); if(!el) return;
+    if(!d.drinks||!d.drinks.length){ el.innerHTML='<div class="empty">No drinks yet — add them from the Till.</div>'; return; }
+    el.innerHTML=d.drinks.map(x=>{
+      const keg=isKeg(x), goods=isGoods(x);
+      const stMl=(+x.stockMl!==undefined&&+x.stockMl!==null)?+x.stockMl:(+x.open||0)*(+x.size||0);
+      const total=stMl+(+x.soldMl||0), left=Math.max(0,stMl);
+      const bm=Math.max(1,+x.barrelMl||50000), barrels=keg?Math.max(0,+x.barrels||0):0;
+      const active=keg?Math.max(0,left-barrels*bm):left;
+      const pct=total>0?Math.max(0,Math.min(100,left/Math.max(1,total)*100)):0;
+      const cls=active<=0&&keg?'red':(pct<25?'grn':'');
+      const right=keg?'keg':goods?(left/Math.max(1,+x.size||1)).toFixed(2)+' '+esc(unitName(x)):((+x.size)>0?(left/(+x.size||1)).toFixed(1)+' bots':'0');
+      const sub=keg?active.toFixed(0)+' ml active'+(barrels?' · '+barrels+' full barrel'+(barrels===1?'':'s'):'')+' · '+left.toFixed(0)+' ml total'
+        :goods?(goodsHasSub(x)?Math.floor(left/Math.max(1,+x.shot_ml||1))+' '+esc(x.sub_unit||'pieces')+' on hand · ':'')+(left/Math.max(1,+x.size||1)).toFixed(2)+' '+esc(unitName(x))
+        :left.toFixed(0)+' / '+total.toFixed(0)+' ml left';
+      return '<div style="margin-bottom:12px"><div class="row" style="border:none;padding:3px 0"><div class="l"><b style="font-size:13.5px">'+esc(x.name)+'</b><span>'+sub+'</span></div><div class="r" style="font-family:var(--serif);font-weight:700;color:'+(cls==='red'?'var(--ember)':'var(--gold)')+'">'+right+'</div></div><div class="gauge"><i class="'+cls+'" style="width:'+pct+'%"></i></div></div>';
+    }).join('');
+  }
+  function renderPrices(d){
+    const el=oE('prices'); if(!el) return;
+    if(!d.drinks||!d.drinks.length){ el.innerHTML='<div class="empty">No prices to edit yet.</div>'; return; }
+    el.innerHTML=d.drinks.map(x=>'<div class="row"><div class="l"><b>'+esc(x.name)+'</b><span>'+(isGoods(x)?esc(unitName(x)):(isKeg(x)?'per cup':'per bottle'))+'</span></div>'+
+      '<div class="r" style="display:flex;gap:6px"><input type="number" min="0" step="1" value="'+(+x.full||0)+'" id="o-price-'+x.id+'" style="width:78px;text-align:center;padding:7px;margin:0">'+
+      '<button class="btn small ghost" onclick="Owner.savePrice(\''+x.id+'\')">Save</button></div></div>').join('');
+  }
+  function savePrice(id){
+    const input=oE('price-'+id); if(!input) return;
+    const v=Math.max(0,Math.round(parseFloat(input.value)||0));
+    doOp([{type:'set_price',oid:oid(),drink:id,k:'full',v}], ()=>toastRes('Price updated on every till'));
+  }
+
+  function renderStocktake(d){
+    const el=oE('stocktake'); if(!el) return;
+    if(!d.drinks||!d.drinks.length){ el.innerHTML='<div class="empty">Add drinks from the Till first.</div>'; return; }
+    const lastTake=d.last_take||null, takeSince=lastTake?lastTake.t:(window._SFROM||0);
+    let prevC={}; if(lastTake){ try{ prevC=JSON.parse(lastTake.counts||'{}'); }catch(e){} }
+    const agg=d.take_agg||{}, ownerAgg=d.owner_take_agg||{}, ownerUnits=d.owner_take_units||{};
+    let ownerTotal=0, Tmin=0, Tmax=0, Tbook=0;
+    const restockQ=id=>(d.restocks||[]).filter(r=>r.drink===id&&r.t>takeSince).reduce((a,r)=>a+r.qty,0);
+    const wasteQ=id=>(d.waste||[]).filter(w=>w.drink===id&&w.t>takeSince).reduce((a,w)=>a+w.qty,0);
+    const rows=d.drinks.map(x=>{
+      const keg=isKeg(x), goods=isGoods(x), unit=unitName(x), size=+x.size||1;
+      const stMl=(+x.stockMl!==undefined&&+x.stockMl!==null)?+x.stockMl:(+x.open||0)*size;
+      const dp=goods?1000:100;
+      if(TAKE_COUNTS[x.id]===undefined || (!TAKE_DIRTY[x.id] && TAKE_STOCK[x.id]!==stMl)){
+        TAKE_COUNTS[x.id]=keg?Math.max(0,Math.round(stMl)):Math.max(0,Math.round(stMl/Math.max(1,size)*dp)/dp);
+        TAKE_STOCK[x.id]=stMl;
+      }
+      const c=TAKE_COUNTS[x.id];
+      const base=(prevC[x.id]!=null)?Math.max(0,Math.round(Number(prevC[x.id])*dp)/dp):Math.max(0,Math.round((+x.open||0)*dp)/dp);
+      const has=base+restockQ(x.id)-wasteQ(x.id);
+      const ownM=ownerAgg[x.id]||0; ownerTotal+=ownM;
+      const sold=Math.max(0,has-c-(ownerUnits[x.id]||0));
+      const band=drinkBand(x,sold), book=(agg[x.id]||0)-ownM;
+      Tmin+=band.min; Tmax+=band.max; Tbook+=book;
+      const flag=(book<band.min-1)?' · <span style="color:var(--ember)">LOW</span>':(book>band.max+1)?' · <span style="color:var(--ember)">HIGH</span>':'';
+      const soldLine=keg?('sold '+sold.toFixed(0)+' of '+has.toFixed(0)+' ml'+(wasteQ(x.id)?' · '+wasteQ(x.id).toFixed(0)+' ml wasted/tapped off':''))
+        :goods?('sold '+sold.toFixed(1)+' of '+has+' '+esc(unit)):('sold '+sold.toFixed(1)+' of '+has+' opened');
+      return '<div class="row" style="align-items:flex-start"><div class="l"><b>'+esc(x.name)+(keg?' <span class="tag half">keg</span>':goods?' <span class="tag half">goods</span>':'')+'</b>'+
+        '<span>'+soldLine+(restockQ(x.id)?(' (+'+restockQ(x.id)+(keg?' ml':(goods?' '+esc(unit):' refill'))+')'):'')+'</span></div>'+
+        '<div class="r"><div style="display:flex;align-items:center;gap:6px">'+
+        '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="Owner.takeAdj(\''+x.id+'\',-1)">−</button>'+
+        '<input type="number" step="'+(keg?'100':(goods?Math.min(0.25,1/Math.max(1,size)):'0.25'))+'" value="'+c+'" onchange="Owner.takeSet(\''+x.id+'\',this.value)" style="width:72px;text-align:center;padding:8px;margin:0">'+
+        '<button class="btn small" style="padding:7px 10px;background:rgba(255,255,255,.05);color:var(--paper);border:1px solid var(--line2)" onclick="Owner.takeAdj(\''+x.id+'\',1)">+</button>'+
+        '<button class="btn small ghost" style="padding:7px 9px;color:var(--ember)" title="Delete this drink" onclick="Owner.delDrink(\''+x.id+'\')">✕</button></div>'+
+        '<div class="mini" style="margin:6px 0 0">expected <b>'+kes(band.min)+'–'+kes(band.max)+'</b> · ledger '+kes(book)+flag+'</div></div></div>';
+    }).join('');
+    const wind=(Tbook<Tmin-1)||(Tbook>Tmax+1);
+    let hist='';
+    (d.stocktakes||[]).forEach(st=>{
+      let t={}; try{ t=JSON.parse(st.totals||'{}'); }catch(e){}
+      hist+='<div class="row" style="padding:5px 0"><div class="l"><b>'+dstr(st.t)+' '+hhmm(st.t)+'</b><span>'+esc(st.note||(st.by_name||'stock-take'))+'</span></div><div class="r"><b class="money" style="font-size:13px">'+kes(t.min||0)+' – '+kes(t.max||0)+'</b><br><span class="mini" style="margin:0">ledger '+kes(t.ledger||0)+'</span></div></div>';
+    });
+    el.innerHTML='<div class="subrow" style="border:none;font-size:11px;color:var(--dim);padding-bottom:4px">Set what is on hand now — total ml for kegs, bottles for drinks, packs/pieces for goods. The band is what the consumed stock should have earned.</div>'+rows+
+      '<div class="subrow" style="margin-top:8px"><span>Expected in till since last take</span><b class="money">'+kes(Tmin)+' – '+kes(Tmax)+'</b></div>'+
+      '<div class="subrow"><span>Recorded on ledger</span><b '+(wind?'style="color:var(--ember)"':'')+'>'+kes(Tbook)+'</b></div>'+
+      '<div class="subrow"><span>Owner / comps · not collected</span><b class="money blue">'+kes(Math.max(0,ownerTotal))+'</b></div>'+
+      '<label class="row" style="border:none;align-items:center;gap:10px;margin:10px 0 0;cursor:pointer"><input type="checkbox" id="o-tkShelfOwner" checked style="width:auto;margin:0;flex:none"><span class="mini" style="margin:0">Lock the shelf to these amounts — starts a fresh poured baseline from this count.</span></label>'+
+      '<div class="rowflex" style="margin-top:10px;gap:8px"><button class="btn primary" style="flex:1" onclick="Owner.saveTake()">Save stock-take · record</button>'+
+      '<button class="btn small ghost" style="flex:0 0 auto" onclick="Owner.takeReset()">Reset counts</button></div>'+
+      (hist?'<div class="ctlbl" style="margin-top:16px">Recent stock-takes</div>'+hist:'<p class="mini" style="margin-top:8px">No stock-takes yet — save one and it becomes a dated record with its valuation.</p>');
+  }
+  function saveTake(){
+    const note=(prompt('Note for this stock-take (optional):')||'').trim();
+    const el=oE('tkShelfOwner'), setShelf=!!(el&&el.checked);
+    const from=(LAST_SUMMARY&&LAST_SUMMARY.last_take)?LAST_SUMMARY.last_take.t:(window._SFROM||0);
+    doOp([{type:'stocktake',oid:oid(),counts:Object.assign({},TAKE_COUNTS),note,from,t:Date.now(),uid:PROFILE?PROFILE.id:'',name:PROFILE?PROFILE.name:'',set_shelf:setShelf?1:0}],
+      ()=>{ TAKE_DIRTY={}; TAKE_STOCK={}; toastRes(setShelf?'Stock-take saved — shelf locked as baseline':'Stock-take saved — valuation recorded'); });
+  }
+  function takeStep(id){
+    const d=(LAST_SUMMARY&&LAST_SUMMARY.drinks||[]).find(x=>x.id===id);
+    return isKeg(d)?100:(d&&isGoods(d)?Math.min(0.25,1/Math.max(1,+d.size||1)):1);
+  }
+  function takeAdj(id,di){
+    if(TAKE_COUNTS[id]===undefined) TAKE_COUNTS[id]=0;
+    TAKE_COUNTS[id]=Math.max(0,Math.round(((TAKE_COUNTS[id]||0)+di*takeStep(id))*1000)/1000);
+    TAKE_DIRTY[id]=1; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY);
+  }
+  function takeSet(id,v){
+    const raw=parseFloat(v)||0, step=takeStep(id);
+    const n=step===100?Math.max(0,Math.round(raw)):Math.round(raw*(step<1?1000:100))/(step<1?1000:100);
+    if(!isFinite(n)||n<0){ renderStocktake(LAST_SUMMARY); return; }
+    TAKE_COUNTS[id]=n; TAKE_DIRTY[id]=1; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY);
+  }
+  function takeReset(){ TAKE_COUNTS={}; TAKE_STOCK={}; TAKE_DIRTY={}; if(LAST_SUMMARY) renderStocktake(LAST_SUMMARY); }
+  function delDrink(id){
+    const x=(LAST_SUMMARY&&LAST_SUMMARY.drinks||[]).find(d=>d.id===id);
+    const nm=x?x.name:'this drink';
+    if(!confirm('Delete "'+nm+'" from the stock list?\n\nSales history stays in reports, but the drink is removed from every device.')) return;
+    delete TAKE_COUNTS[id];
+    doOp([{type:'delete_drink',oid:oid(),drink:id,dname:nm,uid:PROFILE?PROFILE.id:'',by_name:PROFILE?PROFILE.name:''}],()=>toastRes('Removed '+nm));
+  }
+
+  function renderShifts(d){
+    const el=oE('shifts'); if(!el) return;
+    const shifts=d.shifts||[], open=shifts.find(s=>!s.close_at), ut=d.uid_totals||{}, uids=Object.keys(ut);
+    let html='';
+    if(open){
+      html+='<div class="card" style="margin:2px 0 10px;border-color:rgba(63,174,90,.35)"><div class="cardhead" style="color:var(--mpesa)">Shift on now</div>'+
+        '<div class="subrow"><span>Bartender</span><b>'+esc(open.user_name||'Unknown staff')+'</b></div>'+
+        '<div class="subrow"><span>Opened</span><b>'+hhmm(open.open_at)+'</b></div>'+
+        '<div class="subrow"><span>Items this shift</span><b>'+open.totals.n+' · '+kes((open.totals.cash||0)+(open.totals.mpesa||0)+(open.totals.deni||0))+'</b></div>'+
+        (open.totals.owner?'<div class="subrow"><span>Owner / comps</span><b class="money blue">'+kes(open.totals.owner)+'</b></div>':'')+'</div>';
+    }
+    if(uids.length){
+      html+='<div class="cardhead" style="margin-top:4px">Who sold today</div>';
+      html+=uids.map(uid=>{
+        const o=ut[uid];
+        return '<div class="row"><div class="l"><b>'+esc(o.name||'Staff')+'</b><span>'+o.n+' sales</span></div><div class="r" style="display:flex;gap:6px;flex-wrap:wrap">'+
+          '<span class="pill2">C '+kes(o.cash)+'</span><span class="pill2 ok">MP '+kes(o.mpesa)+'</span>'+
+          (o.deni?'<span class="pill2 warn">D '+kes(o.deni)+'</span>':'')+(o.owner?'<span class="pill2" style="color:#93b7e6">OWNER '+kes(o.owner)+'</span>':'')+'</div></div>';
+      }).join('');
+    }
+    const past=shifts.filter(s=>s.close_at).slice(0,6);
+    if(past.length){
+      html+='<div class="cardhead" style="margin-top:8px">Handovers</div>';
+      html+=past.map(s=>{
+        const total=(s.totals.cash||0)+(s.totals.mpesa||0)+(s.totals.deni||0);
+        let ok=true;
+        if(s.stored) ok=Math.abs((s.stored.cash||0)-(s.totals.cash||0))<1.5&&Math.abs((s.stored.mpesa||0)-(s.totals.mpesa||0))<1.5;
+        return '<div class="row"><div class="l"><b>'+esc(s.user_name||'Unknown staff')+'</b><span>'+dstr(s.open_at)+' '+hhmm(s.open_at)+' → '+hhmm(s.close_at)+' · '+s.totals.n+' sales</span></div>'+
+          '<div class="r"><b class="money">'+kes(total)+'</b>'+(s.stored?'<span class="tag '+(ok?'mpesa':'deni')+'" style="margin-top:5px">'+(ok?'lights match':'handover off')+'</span>':'')+'</div></div>';
+      }).join('');
+    }
+    if(!open&&!uids.length&&!past.length) html='<div class="empty">No shifts yet — bartenders start their shift from the Till.</div>';
+    el.innerHTML=html;
+  }
+
+  async function renderEmployees(){
+    const el=oE('employees'); if(!el) return;
+    const r=await api('/api/bar/staff','','GET');
+    if(!r.ok){ el.innerHTML='<div class="empty">Could not load employees.</div>'; return; }
+    const staff=r.data.staff||[];
+    let h=staff.length?'':'<div class="empty">No employees yet — add your bartenders below.</div>';
+    staff.forEach(s=>{
+      const owner=s.role==='owner';
+      h+='<div class="row"><div class="l"><b>'+esc(s.name||'Staff')+'</b><span>'+(owner?'Owner':(s.phone?('Phone 0'+esc(s.phone)):'Add a phone so they can log in'))+'</span></div>'+
+        (owner?'':'<div class="r" style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn small ghost" onclick="Owner.empEdit(\''+s.id+'\')">Edit</button><button class="btn small ghost" style="color:var(--ember)" onclick="Owner.empDel(\''+s.id+'\')">Remove</button></div>')+'</div>';
+    });
+    h+='<button class="btn primary" style="margin-top:10px" onclick="Owner.empAdd()">+ Add employee</button>';
+    h+='<p class="mini" style="margin-top:8px">Bartenders open the Till and log in with their phone number + your join code <b>'+esc(JOIN_CODE||'—')+'</b>.</p>';
+    el.innerHTML=h;
+  }
+  function empAdd(){
+    const name=(prompt('Employee name:')||'').trim(); if(!name) return;
+    const phone=(prompt('Phone number (e.g. 0712345678):')||'').trim(); if(!phone) return;
+    api('/api/bar/staff/add',{name,phone}).then(r=>{
+      if(!r.ok){ toastRes(r.data.error||'Could not add employee'); return; }
+      toastRes('Added '+name); renderEmployees();
+    });
+  }
+  function empEdit(id){
+    const name=(prompt('New name (leave blank to keep):')||'').trim();
+    const phone=(prompt('New phone (leave blank to keep):')||'').trim();
+    if(!name&&!phone){ toastRes('Nothing changed'); return; }
+    const body={id}; if(name) body.name=name; if(phone) body.phone=phone;
+    api('/api/bar/staff/update',body).then(r=>{
+      if(!r.ok){ toastRes(r.data.error||'Could not update'); return; }
+      toastRes('Employee updated'); renderEmployees();
+    });
+  }
+  function empDel(id){
+    if(!confirm('Remove this employee? They will no longer be able to log in.')) return;
+    api('/api/bar/staff/delete',{id}).then(r=>{
+      if(!r.ok){ toastRes(r.data.error||'Could not remove'); return; }
+      toastRes('Employee removed'); renderEmployees();
+    });
+  }
+
+  function auditText(it){
+    const p=it.payload||{}, dmap={};
+    (LAST_SUMMARY&&LAST_SUMMARY.drinks||[]).forEach(x=>{ dmap[x.id]=x; });
+    const dobj=dmap[p.drink], drink=dobj?dobj.name:'a drink';
+    const unit=(p.keg!==undefined?!!p.keg:isKeg(dobj))?' ml':(isGoods(dobj)?' '+unitName(dobj):' bottles');
+    switch(it.type){
+      case 'sale': return (String(p.pay||'')==='owner'?'Owner took/bought '+drink:'Sold '+drink)+(p.qty>1?' ×'+p.qty:'')+' · '+kes(p.price)+(p.pay?' · '+(PAY_LBL[p.pay]||p.pay):'');
+      case 'return_sale': return 'Voided '+drink+(p.qty>1?' ×'+p.qty:'')+' · '+kes(Math.abs(p.price||0));
+      case 'restock': return 'Restocked '+drink+' +'+(p.qty||1)+unit;
+      case 'waste': return 'Removed/spilled '+drink+' −'+(p.qty||1)+unit;
+      case 'set_open': return 'Opened '+drink+' at '+(p.open||0)+unit;
+      case 'set_barrels': return 'Set '+drink+' reserve to '+(p.barrels||0)+' full barrels';
+      case 'restock_barrels': return 'Received '+(p.qty||0)+' full barrel'+((p.qty||0)===1?'':'s')+' of '+drink;
+      case 'set_barrel_ml': return 'Set '+drink+' barrel size to '+(p.barrelMl||50000)+' ml';
+      case 'tap_barrel': return 'Tapped next barrel of '+drink+' at '+(p.ml||50000)+' ml';
+      case 'add_drink': return 'Added '+(p.name||'a drink');
+      case 'delete_drink': return 'Deleted '+(p.dname||p.name||drink);
+      case 'set_price': return 'Changed the price of '+drink+' to '+kes(p.v||0);
+      case 'set_drink_split': return 'Updated the split for '+drink;
+      case 'stocktake': return 'Stock-take · KES '+Math.round((p.totals&&p.totals.min)||0)+'–'+Math.round((p.totals&&p.totals.max)||0);
+      case 'set_shift': return p.action==='open'?'Started a shift':'Closed a shift';
+      case 'add_debt': return 'Added debt · '+esc(p.name||p.who||'')+' '+kes(p.amount||0);
+      case 'debt_payment': return 'Debt payment · '+kes(p.amount||0);
+      case 'new_day': return 'Started a new day';
+      case 'set_bar': return 'Renamed the bar to '+(p.name||'');
+      default: return it.type;
+    }
+  }
+  async function renderAudit(){
+    const el=oE('audit'); if(!el) return;
+    const r=await api('/api/bar/audit','','GET');
+    if(!r.ok){ el.innerHTML='<div class="empty">Could not load the activity log.</div>'; return; }
+    const items=r.data.items||[];
+    if(!items.length){ el.innerHTML='<div class="empty">No activity yet.</div>'; return; }
+    el.innerHTML=items.map(it=>'<div class="row"><div class="l"><b>'+esc(it.uname||'Someone')+'</b><span>'+auditText(it)+'</span></div><div class="r"><span class="mini" style="white-space:nowrap">'+hhmm(it.t)+' · '+dstr(it.t)+'</span></div></div>').join('');
+  }
+  function renderTop(top){
+    const el=oE('top'); if(!el) return;
+    if(!top||!top.length){ el.innerHTML='<div class="empty">No sales yet today.</div>'; return; }
+    el.innerHTML=top.map(t=>'<div class="row"><div class="l"><b>'+esc(t.name)+'</b><span>top mover</span></div><div class="r"><b class="money" style="font-size:17px">'+kes(t.value)+'</b></div></div>').join('');
+  }
+  function renderDebts(d){
+    const el=oE('debts'); if(!el) return;
+    const sub=oE('debtSub'); if(sub) sub.textContent=kes(d.debt_outstanding)+' · '+d.debt_count+' debtors';
+    if(!d.debts||!d.debts.length){ el.innerHTML='<div class="empty">No outstanding debts. Clean books!</div>'; return; }
+    el.innerHTML=d.debts.map((x,i)=>{
+      const ini=(x.name||'?').trim().charAt(0).toUpperCase()||'?';
+      return '<div class="debtor"><div style="display:flex;align-items:center;gap:12px"><div class="av">'+ini+'</div>'+
+        '<div style="flex:1;min-width:0"><b style="font-size:15px">'+esc(x.name)+'</b><div style="font-size:11px;color:var(--dim)">debt outstanding</div></div>'+
+        '<div style="text-align:right"><b class="money red" style="font-size:19px">'+kes(x.amount)+'</b></div></div>'+
+        '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn small" style="flex:1;background:rgba(63,174,90,.14);color:var(--mpesa)" onclick="Owner.payDebt('+i+')">Receive payment</button>'+
+        '<button class="btn small" style="flex:1;background:rgba(255,255,255,.05);color:var(--dim);border:1px solid var(--line2)" onclick="Owner.clearDebt('+i+')">Clear</button></div></div>';
+    }).join('');
+  }
+  function payDebt(i){
+    const x=DEBTS_SNAPSHOT[i]; if(!x) return;
+    const v=Math.max(0,Math.round(parseFloat(prompt('Amount received from '+x.name+'?',x.amount))||0));
+    if(!v) return;
+    doOp([{type:'debt_payment',oid:oid(),who:x.name,amount:v}],()=>toastRes('Payment recorded — '+kes(v)));
+  }
+  function clearDebt(i){
+    const x=DEBTS_SNAPSHOT[i]; if(!x) return;
+    if(!confirm('Clear all debt for '+x.name+' ('+kes(x.amount)+')?')) return;
+    doOp([{type:'debt_payment',oid:oid(),who:x.name,amount:x.amount}],()=>toastRes(x.name+' cleared'));
+  }
+  function renderFeed(feed){
+    const el=oE('feed'); if(!el) return;
+    if(!feed||!feed.length){ el.innerHTML='<div class="empty">Nothing yet — sales will appear here in real time.</div>'; return; }
+    const dmap={}; (LAST_SUMMARY&&LAST_SUMMARY.drinks||[]).forEach(x=>{ dmap[x.id]=x; });
+    el.innerHTML=feed.map((s,i)=>{
+      const tm=new Date(s.t);
+      const lbl=tm.getHours().toString().padStart(2,'0')+':'+tm.getMinutes().toString().padStart(2,'0');
+      const ret=!!s.isReturn||(s.price||0)<0, amt=Math.abs(s.price||0);
+      const d=dmap[s.drink], sizeLbl=sizeLabel(d,s.size);
+      return '<div class="row"><div class="l"><b>'+esc(s.name)+' '+(ret?'<span class="tag return">Return</span>':'')+' <span class="tag '+(s.size||'full')+'">'+esc(sizeLbl)+'</span>'+(s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':'')+'</b>'+
+        '<span>'+lbl+' · '+(s.pay==='owner'?('Owner'+(s.who?' → '+esc(s.who):'')):(s.staff||s.who||'over counter'))+'</span></div>'+
+        '<div class="r"><b class="money'+(ret?' red':(s.pay==='owner'?' blue':''))+'" style="font-size:15px">'+kes(amt)+'</b><br><span class="tag '+s.pay+'">'+(PAY_LBL[s.pay]||s.pay)+(s.pay==='owner'&&s.who?' · '+esc(s.who):'')+'</span>'+
+        (ret?'':'<button class="btn small ghost" style="margin-top:5px;padding:4px 8px;color:var(--ember)" onclick="Owner.voidSale('+i+')">Void</button>')+'</div></div>';
+    }).join('');
+  }
+  function voidSale(i){
+    const s=(LAST_SUMMARY&&LAST_SUMMARY.feed||[])[i]; if(!s||s.isReturn) return;
+    if(!confirm('Void this sale? Stock, money and any debt are reversed. It stays in the activity log.')) return;
+    doOp([{type:'return_sale',oid:oid(),drink:s.drink,size:s.size,qty:s.qty||1,price:Math.abs(s.price||0),pay:s.pay||'cash',who:s.who||'',uid:PROFILE?PROFILE.id:'',staff:PROFILE?PROFILE.name:'',round:s.round||'',t:Date.now()}],
+      ()=>toastRes('Sale voided'));
+  }
+  function copyReport(){
+    const t=(LAST_SUMMARY&&LAST_SUMMARY.totals)||{};
+    const out=(LAST_SUMMARY&&LAST_SUMMARY.bar&&LAST_SUMMARY.bar.name||'Bar')+' — '+new Date().toLocaleDateString('en-KE')+' (Kaunta)\n\n'+
+      'Collected: '+kes(t.total||0)+'\n  Cash: '+kes(t.cash||0)+'\n  M-Pesa: '+kes(t.mpesa||0)+
+      '\nDebt today: '+kes(t.deni||0)+'\nOwner / comps (not collected): '+kes(t.owner||0)+
+      '\nReturns: '+kes(t.returns||0)+' ('+(t.returnsCount||0)+' items)\nSales: '+(t.count||0);
+    if(navigator.clipboard) navigator.clipboard.writeText(out).then(()=>toastRes('Report copied')).catch(()=>toastRes(out));
+    else toastRes(out);
+  }
+  function exportCsv(){
+    const rows=[['time','drink','portion','qty','amount','pay','staff','return']];
+    ((LAST_SUMMARY&&LAST_SUMMARY.feed)||[]).forEach(s=>rows.push([
+      new Date(s.t).toISOString(), s.name||s.drink, s.size||'full', s.qty||1,
+      Math.abs(s.price||0), s.pay||'', s.staff||s.who||'', s.isReturn?'yes':'no'
+    ]));
+    const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    a.download='kaunta-sales-'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    toastRes('CSV downloaded');
+  }
+
+  async function showPay(){
+    const card=oE('payCard'); if(!card) return;
+    const price=SUB?Math.round(SUB.price_cents/100):500;
+    card.innerHTML='<h2>Pay · KES '+price+'/month</h2><p class="sub" id="o-payInfo">Checking…</p><div id="o-payMode"></div><div class="err" id="o-payErr"></div><button class="btn ghost" style="margin-top:10px" onclick="Owner.hidePay()">Close</button>';
+    oE('payov').classList.remove('hidden');
+    const info=await api('/api/pay/info','','GET');
+    if(!info.ok){ oE('payInfo').textContent=info.data.error||'Could not load payment info'; return; }
+    if(info.data.mode==='manual'){
+      oE('payInfo').innerHTML='Lipa na M-Pesa, then confirm the code:';
+      oE('payMode').innerHTML='<div class="card" style="margin:0 0 8px;padding:12px;font-size:12px;color:var(--dim);line-height:1.7">'+
+        '1) M-Pesa → Lipa na M-Pesa → Pay Bill<br>2) Business: <b>'+info.data.paybill+'</b> · Account: <b>'+info.data.account+'</b><br>'+
+        '3) Amount <b>KES '+info.data.price+'</b><br>4) Paste the code below</div>'+
+        '<label class="lbl">M-Pesa message code</label><input id="o-payRef" placeholder="e.g. SLK3XQ2B9L"><button class="btn primary" onclick="Owner.confirmPay()">Confirm payment</button>';
+    }else{
+      oE('payInfo').textContent='M-Pesa prompt is sent to the owner’s phone — confirm it there.';
+      oE('payMode').innerHTML='<label class="lbl">M-Pesa phone (07…)</label><input id="o-payPhone" type="tel" placeholder="07xxxxxxxx"><button class="btn primary" onclick="Owner.requestStk()">Send M-Pesa prompt</button>';
+    }
+  }
+  function hidePay(){ oE('payov').classList.add('hidden'); }
+  async function requestStk(){
+    const err=oE('payErr'); err.style.display='none';
+    const r=await api('/api/pay/request',{phone:oE('payPhone').value.trim()});
+    if(!r.ok){ err.textContent=r.data.error||'Could not start prompt'; err.style.display='block'; return; }
+    if(r.data.mode==='manual'){ showPay(); }
+    toastRes('M-Pesa prompt sent — enter your PIN');
+  }
+  async function confirmPay(){
+    const err=oE('payErr'); err.style.display='none';
+    const ref=oE('payRef')?oE('payRef').value.trim():'';
+    if(!ref){ err.textContent='Paste the M-Pesa code first'; err.style.display='block'; return; }
+    const r=await api('/api/pay/verify',{ref});
+    if(!r.ok){ err.textContent=r.data.error||'Payment not confirmed'; err.style.display='block'; return; }
+    hidePay(); toastRes('Payment confirmed — thank you!'); loadSummary();
+  }
+
+  function start(){
+    loadSummary();
+    if(!timer) timer=setInterval(()=>{ if(typeof MODE==='undefined'||MODE==='owner') loadSummary(); },15000);
+    if(!window._ownerOnline){ window._ownerOnline=true; window.addEventListener('online',()=>{ if(typeof MODE==='undefined'||MODE==='owner') loadSummary(); }); }
+  }
+  function stop(){ if(timer){ clearInterval(timer); timer=null; } }
+
+  window.Owner={start,stop,copyJoin,showPay,hidePay,requestStk,confirmPay,savePrice,takeAdj,takeSet,takeReset,saveTake,delDrink,empAdd,empEdit,empDel,payDebt,clearDebt,voidSale,copyReport,exportCsv,loadSummary};
+})();
+</script>
 </body>
 </html> 
