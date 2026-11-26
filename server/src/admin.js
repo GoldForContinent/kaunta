@@ -24,7 +24,7 @@ export async function adminStats(env, ctx) {
   const [subs, pays, salesToday, syncedToday, bars] = await Promise.all([
     env.DB.prepare('SELECT bar_id, trial_ends_at, current_period_end, price_cents FROM subscriptions').all(),
     env.DB.prepare("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS n FROM payments WHERE status = 'paid'").first(),
-    env.DB.prepare("SELECT COALESCE(SUM(price),0) AS total, COUNT(*) AS n FROM sales WHERE t >= ? AND drink NOT IN ('_pay','_deni')").bind(dayStart).first(),
+    env.DB.prepare("SELECT COALESCE(SUM(price),0) AS total, COUNT(*) AS n FROM sales WHERE t >= ? AND drink NOT IN ('_pay','_deni') AND pay <> 'owner'").bind(dayStart).first(),
     env.DB.prepare('SELECT COUNT(*) AS n FROM bar_meta WHERE last_sync >= ?').bind(dayStart).first(),
     env.DB.prepare('SELECT COUNT(*) AS n FROM bars').first(),
   ]);

@@ -94,6 +94,7 @@ main{padding:18px 16px 30px;position:relative;z-index:2}
 }
 .money.red{background:linear-gradient(120deg,#ff9a7a,#ff5c38 55%,#c93a17);-webkit-background-clip:text;background-clip:text;color:transparent}
 .money.grn{background:linear-gradient(120deg,#86e3a0,#3fae5a 55%,#2c8a44);-webkit-background-clip:text;background-clip:text;color:transparent}
+.money.blue{background:linear-gradient(120deg,#dceafd,#93b7e6 55%,#5d7fa9);-webkit-background-clip:text;background-clip:text;color:transparent}
 .k{font-size:11px;color:var(--dim);font-family:var(--sans);font-weight:700;letter-spacing:1px;vertical-align:4px;margin-right:2px}
 .fig-md{font-size:30px}
 .fig-lg{font-size:44px;line-height:1}
@@ -124,6 +125,7 @@ main{padding:18px 16px 30px;position:relative;z-index:2}
 .stat.deni{--glow:rgba(255,92,56,.18)}.stat.deni .cdot{background:var(--ember)}
 .stat.all{--glow:rgba(255,217,138,.22)}.stat.all .cdot{background:var(--paper)}
 .stat.ret{--glow:rgba(255,92,56,.18)}.stat.ret .cdot{background:var(--ember)}
+.stat.owner{--glow:rgba(147,183,230,.20)}.stat.owner .cdot{background:#93b7e6}
 
 /* ============ cards ============ */
 .card{
@@ -185,6 +187,7 @@ main{padding:18px 16px 30px;position:relative;z-index:2}
 .tag.cash{background:rgba(233,185,92,.13);color:var(--gold)}
 .tag.mpesa{background:rgba(63,174,90,.12);color:var(--mpesa)}
 .tag.deni{background:rgba(255,92,56,.12);color:var(--ember)}
+.tag.owner{background:rgba(147,183,230,.13);color:#93b7e6}
 .tag.return{background:rgba(255,92,56,.16);color:var(--ember)}
 .tag.full{background:rgba(244,234,214,.08);color:var(--paper)}
 .tag.half{background:rgba(233,185,92,.12);color:var(--gold)}
@@ -217,6 +220,7 @@ main{padding:18px 16px 30px;position:relative;z-index:2}
 #payRow .chip.sel.cash{background:linear-gradient(150deg,#ffd98a,#dda43f);color:#211407}
 #payRow .chip.sel.mpesa{background:linear-gradient(150deg,#86e3a0,#2f9450);color:#0a2311}
 #payRow .chip.sel.deni{background:linear-gradient(150deg,#ff9a7a,#e0401c);color:#2b0d04}
+#payRow .chip.sel.owner{background:linear-gradient(150deg,#cfe0f6,#6d8fbd);color:#0b1624}
 
 /* ============ inputs ============ */
 input{
@@ -606,9 +610,14 @@ body.nxt .overlay{padding-top:76px}
         <div class="stat cash"><div class="lbl"><span class="cdot"></span>Cash today</div><div class="val money" id="sCash">KES 0</div></div>
         <div class="stat mpesa"><div class="lbl"><span class="cdot"></span>M-Pesa today</div><div class="val money grn" id="sMpesa">KES 0</div></div>
         <div class="stat deni"><div class="lbl"><span class="cdot"></span>Debt today</div><div class="val money red" id="sDebtDay">KES 0</div></div>
-        <div class="stat all"><div class="lbl"><span class="cdot"></span>Total sales</div><div class="val" id="sAll" style="color:var(--paper)">KES 0</div></div>
+        <div class="stat all"><div class="lbl"><span class="cdot"></span>Recorded money</div><div class="val" id="sAll" style="color:var(--paper)">KES 0</div></div>
         <div class="stat ret"><div class="lbl"><span class="cdot"></span>Returns today</div><div class="val money red" id="sReturns">KES 0</div></div>
         <div class="stat ret"><div class="lbl"><span class="cdot"></span>Items returned</div><div class="val" id="sRetCount" style="color:var(--paper)">0</div></div>
+        <div class="stat owner" style="grid-column:1/-1">
+          <div class="lbl"><span class="cdot"></span>Owner / comps · stock used, no money collected</div>
+          <div class="val money blue" id="sOwner">KES 0</div>
+          <div class="mini" style="margin:6px 0 0">Tagged in the till so the bartender is never blamed for these items. Excluded from collected money and from the expected-till check.</div>
+        </div>
       </div>
 
       <div id="alerts"></div>
@@ -666,10 +675,11 @@ body.nxt .overlay{padding-top:76px}
         <div class="chip cash" data-pay="cash">Cash</div>
         <div class="chip mpesa" data-pay="mpesa">M-Pesa</div>
         <div class="chip deni" data-pay="deni">Debt</div>
+        <div class="chip owner" data-pay="owner">Owner</div>
       </div>
 
       <div id="debtNameWrap" class="hidden">
-        <label class="lbl">Customer name</label>
+        <label class="lbl" id="whoLbl">Customer name</label>
         <div class="regchips" id="regChips"></div>
         <input id="debtName" placeholder="Write the customer's name…">
       </div>
@@ -714,6 +724,7 @@ body.nxt .overlay{padding-top:76px}
         <div class="chip" data-f="cash">Cash</div>
         <div class="chip" data-f="mpesa">M-Pesa</div>
         <div class="chip" data-f="deni">Debt</div>
+        <div class="chip" data-f="owner">Owner</div>
       </div>
       <div id="histList"></div>
     </section>
@@ -756,7 +767,7 @@ body.nxt .overlay{padding-top:76px}
 /* =============== DATA =============== */
 const FRACT = {full:1, half:0.5, quarter:0.25};
 const FR_LBL = {full:'Full', half:'Half', quarter:'Quarter', shot:'Shot'};
-const PL = {cash:'Cash', mpesa:'M-Pesa', deni:'Debt'};
+const PL = {cash:'Cash', mpesa:'M-Pesa', deni:'Debt', owner:'Owner'};
 const DEF_DRINKS = [
   {id:'kc', name:'Kenya Cane', size:250, full:350, half:175, quarter:90, open:10, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:2500, quick:1},
   {id:'kg', name:'Kibao Gin', size:250, full:250, half:130, quarter:70, open:8, soldMl:0, divisible:1, shot_ml:0, shot_price:0, stockMl:2000, quick:1},
@@ -1505,7 +1516,11 @@ function updChips(){
   });
   document.querySelectorAll('#payRow .chip').forEach(c=>c.classList.toggle('sel', c.dataset.pay===S.pay));
   const w=document.getElementById('debtNameWrap');
-  w.classList.toggle('hidden', S.pay!=='deni');
+  const isOwner=S.pay==='owner';
+  w.classList.toggle('hidden', S.pay!=='deni' && !isOwner);
+  document.getElementById('whoLbl').textContent=isOwner?'Who was it for? (optional)':'Customer name';
+  document.getElementById('debtName').placeholder=isOwner?'Owner bought for someone — optional note…':"Write the customer's name…";
+  document.getElementById('regChips').style.display=S.pay==='deni'?'':'none';
   if(S.pay==='deni') renderRegs();
   const amt=drinkPrice(d,S.size)*S.qty;
   document.getElementById('sellBtn').textContent = `＋ ADD TO ROUND · ${kes(amt)}`;
@@ -1554,7 +1569,7 @@ function renderRound(){
   wrap.innerHTML = ROUND.map((l,i)=>{
     const d=DB.drinks.find(x=>x.id===l.drink);
     const nm=d?d.name:(l.drink||'?');
-    const deni = l.pay==='deni';
+    const needWho = l.pay==='deni'||l.pay==='owner';
     let label=d?sizeLabel(d,l.size):(FR_LBL[l.size]||l.size);
     if(l.size&&l.size.startsWith('cup')&&d){
       const ci=parseInt(l.size.slice(3)); const cup=d.cups?d.cups[ci]:null;
@@ -1566,14 +1581,14 @@ function renderRound(){
         <div class="r"><b class="money" style="font-size:15px">${kes(roundAmt(l))}</b></div>
       </div>
       <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
-        ${['cash','mpesa','deni'].map(p=>`<button class="btn small" style="flex:1;padding:7px 6px;font-size:10.5px;${l.pay===p?'background:var(--paper);color:#171307;border-color:transparent':'background:rgba(255,255,255,.04);color:var(--dim);border:1px solid var(--line2)'}" onclick="setRoundPay(${i},'${p}')">${PL[p]}</button>`).join('')}
-        ${deni?'<input id="rw-'+l.key+'" value="'+esc(l.who||'')+'" placeholder="Customer name" oninput="setRoundWho(\''+l.key+'\',this.value)" style="flex:2;margin:0;padding:8px 10px;font-size:11.5px">':''}
+        ${['cash','mpesa','deni','owner'].map(p=>`<button class="btn small" style="flex:1;padding:7px 4px;font-size:10px;${l.pay===p?'background:var(--paper);color:#171307;border-color:transparent':'background:rgba(255,255,255,.04);color:var(--dim);border:1px solid var(--line2)'}" onclick="setRoundPay(${i},'${p}')">${PL[p]}</button>`).join('')}
+        ${needWho?'<input id="rw-'+l.key+'" value="'+esc(l.who||'')+'" placeholder="'+(l.pay==='owner'?'For who? (optional)':'Customer name')+'" oninput="setRoundWho(\''+l.key+'\',this.value)" style="flex:2;margin:0;padding:8px 10px;font-size:11.5px">':''}
         <button class="btn small" style="padding:7px 10px;background:rgba(255,92,56,.12);color:var(--ember);border:1px solid rgba(255,92,56,.3)" onclick="removeRound(${i})">✕</button>
       </div>
     </div>`;
   }).join('');
 }
-function setRoundPay(i,p){ ROUND[i].pay=p; if(p!=='deni') ROUND[i].who=''; renderRound(); }
+function setRoundPay(i,p){ ROUND[i].pay=p; if(p!=='deni'&&p!=='owner') ROUND[i].who=''; renderRound(); }
 function setRoundWho(key,v){ const l=ROUND.find(x=>x.key===key); if(l) l.who=v.trim(); }
 function removeRound(i){ ROUND.splice(i,1); renderRound(); }
 function clearRound(){ ROUND.length=0; renderRound(); }
@@ -1583,7 +1598,7 @@ function addToRound(){
   if(!price) return toast('No '+sizeLabel(d,S.size)+' price set for this one');
   let who=S.who.trim();
   if(S.pay==='deni' && !who) return toast('Write the customer name');
-  ROUND.push({key:oid(), drink:d.id, size:S.size, qty:S.qty, price, pay:S.pay, who:S.pay==='deni'?who:''});
+  ROUND.push({key:oid(), drink:d.id, size:S.size, qty:S.qty, price, pay:S.pay, who:(S.pay==='deni'||S.pay==='owner')?who:''});
   S.qty=1; document.getElementById('qtyVal').textContent='1';
   renderRound(); renderSell(); updChips();
   toast(nmShort(d.name)+' added — keep loading the round');
@@ -1612,8 +1627,9 @@ function chargeRound(){
     const pm=pourMl(d,l.size,l.qty);
     d.soldMl+=pm; d.stockMl=Math.max(0,roundLeft(d)-pm);
     if(l.pay==='deni'){ DB.debts[l.who]=(DB.debts[l.who]||0)+amt; addReg(l.who); }
-    DB.sales.push({t, drink:l.drink, size:l.size, qty:l.qty, price:amt, pay:l.pay, who:l.pay==='deni'?l.who:'', uid:st.id, staff:st.name, round:rid});
-    enqueue('sale',{t, drink:l.drink, size:l.size, qty:l.qty, price:amt, pay:l.pay, who:l.pay==='deni'?l.who:'', uid:st.id, staff:st.name, round:rid});
+    const who=(l.pay==='deni'||l.pay==='owner')?l.who:'';
+    DB.sales.push({t, drink:l.drink, size:l.size, qty:l.qty, price:amt, pay:l.pay, who, uid:st.id, staff:st.name, round:rid});
+    enqueue('sale',{t, drink:l.drink, size:l.size, qty:l.qty, price:amt, pay:l.pay, who, uid:st.id, staff:st.name, round:rid});
   });
   save();
   clearRound();
@@ -1633,6 +1649,15 @@ const salesOnly = ts => ts.filter(s=>!isRet(s));
 const returnsOnly = ts => ts.filter(isRet);
 const returnAmt = ts => returnsOnly(ts).reduce((a,s)=>a+Math.abs(s.price||0),0);
 const returnByPay = (ts,p) => returnsOnly(ts).filter(s=>s.pay===p).reduce((a,s)=>a+Math.abs(s.price||0),0);
+/* Owner comps consume stock but are not money. Exclude their units and value from
+   expected-vs-ledger checks so the till never blames the bartender for them. */
+function ownerAdj(ts,id){
+  const d=DB.drinks.find(x=>x.id===id);
+  const rows=ts.filter(s=>s.drink===id && s.pay==='owner');
+  const money=rows.reduce((a,s)=>a+(s.price||0),0); // return rows are already negative
+  const units=d?rows.reduce((a,s)=>a+((s.price||0)<0?-1:1)*pourMl(d,s.size,s.qty),0):0;
+  return {money,units};
+}
 let stockCheckAll=false;   // "Stock vs expected" card: collapsed by default on the dash
 
 function countUp(el,to,cur){
@@ -1650,6 +1675,7 @@ function renderDash(){
   const cash=Math.max(0,byPay(s,'cash')-returnByPay(t,'cash'));
   const mpesa=Math.max(0,byPay(s,'mpesa')-returnByPay(t,'mpesa'));
   const deni=Math.max(0,byPay(s,'deni')-returnByPay(t,'deni'));
+  const ownerAmt=Math.max(0,byPay(s,'owner')-returnByPay(t,'owner'));
   const sold=cash+mpesa;
   const retTotal=returnAmt(t);
   countUp(document.getElementById('heroTotal'), sold);
@@ -1657,16 +1683,17 @@ function renderDash(){
   countUp(document.getElementById('sCash'), cash);
   countUp(document.getElementById('sMpesa'), mpesa);
   countUp(document.getElementById('sDebtDay'), deni);
-  countUp(document.getElementById('sAll'), s.reduce((a,x)=>a+x.price,0));
+  countUp(document.getElementById('sAll'), cash+mpesa+deni);
+  countUp(document.getElementById('sOwner'), ownerAmt);
   countUp(document.getElementById('sReturns'), retTotal);
   document.getElementById('heroReturns').textContent=kes(retTotal);
   document.getElementById('sRetCount').textContent=rets.length;
   document.getElementById('heroDeni').textContent=kes(deni);
-  document.getElementById('heroSales').textContent=s.length;
+  document.getElementById('heroSales').textContent=s.filter(x=>x.pay!=='owner').length;
 
-  /* hour heat — sales pace by KES per hour */
+  /* hour heat — sales pace by KES per hour (owner comps are not collected KES) */
   let hh=new Array(24).fill(0);
-  s.forEach(x=>{ hh[new Date(x.t).getHours()] += (x.price||0); });
+  s.filter(x=>x.pay!=='owner').forEach(x=>{ hh[new Date(x.t).getHours()] += (x.price||0); });
   const max=Math.max(...hh,1);
   const hi=new Date().getHours();
   const heatEl=document.getElementById('heat'); if(heatEl) heatEl.title='Sales pace today (KES/hour)';
@@ -1714,8 +1741,8 @@ function renderDash(){
 
   renderStockCheck();
 
-  /* top movers (skip internal pay/deni ledger entries) */
-  const real = s.filter(x=>DB.drinks.some(y=>y.id===x.drink));
+  /* top movers (skip internal pay/deni ledger entries and owner comps) */
+  const real = s.filter(x=>x.pay!=='owner' && DB.drinks.some(y=>y.id===x.drink));
   const agg={}; real.forEach(x=>agg[x.drink]=(agg[x.drink]||0)+x.price);
   const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,4);
   document.getElementById('topDrinks').innerHTML = top.length? top.map(([id,v])=>{
@@ -1733,8 +1760,8 @@ function renderDash(){
     const lbl=isT? (tm.getHours().toString().padStart(2,'0'))+':'+(tm.getMinutes().toString().padStart(2,'0')) : 'yesterday';
     const ret=isRet(x);
     return `<div class="row"><div class="l"><b>${esc(d.name)} ${ret?'<span class="tag return">Return</span> ':''}<span class="tag ${x.size}">${esc(sizeLabel(d,x.size))}</span>${x.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':''}</b>
-      <span>${lbl} · ${esc(x.staff||x.who||'over counter')}</span></div>
-      <div class="r"><b class="money${ret?' red':''}" style="font-size:15px">${kes(Math.abs(x.price||0))}</b><br>
+      <span>${lbl} · ${x.pay==='owner'?'Owner'+(x.who?' → '+esc(x.who):''):esc(x.staff||x.who||'over counter')}</span></div>
+      <div class="r"><b class="money${ret?' red':(x.pay==='owner'?' blue':'')}" style="font-size:15px">${kes(Math.abs(x.price||0))}</b><br>
       <span class="tag ${x.pay}"><span class="dp"></span>${PL[x.pay]||x.pay}</span></div></div>`;
   }).join('');
 }catch(e){ console.error('renderDash error', e); }
@@ -1745,9 +1772,12 @@ function renderStockCheck(){
   const el=document.getElementById('stockCheck'); if(!el) return;
   const t2=todaySales();
   const exp={min:0,max:0,book:0};
+  let ownerTotal=0;
   const rows=DB.drinks.map(d=>{
-    const band=drinkBand(d,isKeg(d)?(d.soldMl||0):(d.soldMl||0)/Ml(d));
-    const book=t2.filter(x=>x.drink===d.id).reduce((a,x)=>a+x.price,0);
+    const oa=ownerAdj(t2,d.id); ownerTotal+=oa.money;
+    const consumed=Math.max(0,(isKeg(d)?(d.soldMl||0):(d.soldMl||0)/Math.max(1,Ml(d)))-(isKeg(d)?oa.units:oa.units/Math.max(1,Ml(d))));
+    const band=drinkBand(d,consumed);
+    const book=t2.filter(x=>x.drink===d.id).reduce((a,x)=>a+x.price,0)-oa.money;
     exp.min+=band.min; exp.max+=band.max; exp.book+=book;
     const raw=roundLeft(d)||0;
     const left=Math.max(0,Math.round(raw));
@@ -1778,9 +1808,10 @@ function renderStockCheck(){
     ? `<button class="btn ghost" style="width:100%;margin-top:4px" onclick="toggleStockCheck()">Show all ${rows.length} drinks · ${hidden} more</button>`
     : `<button class="btn ghost" style="width:100%;margin-top:4px" onclick="toggleStockCheck()">Show less</button>`;
   el.innerHTML=
-    `<div class="subrow"><span>Expected today</span><b class="money">KES ${exp.min} – ${exp.max}</b></div>
+    `<div class="subrow"><span>Expected in till today</span><b class="money">KES ${exp.min} – ${exp.max}</b></div>
      <div class="subrow"><span>Recorded on ledger</span><b ${expOut?'style="color:var(--ember)"':''}>${kes(exp.book)}</b></div>
-     <div style="margin:6px 0 2px;height:1px;background:var(--line)"></div>`+
+     <div class="subrow"><span>Owner / comps · not collected</span><b class="money blue">KES ${Math.max(0,ownerTotal)}</b></div>
+      <div style="margin:6px 0 2px;height:1px;background:var(--line)"></div>`+
     (rows.length>8&&!stockCheckAll?`<div class="mini" style="margin:2px 0 10px">Showing the ${shown.length} that need attention first.</div>`:'')+
     shown.map(r=>r.html).join('')+foot;
 }
@@ -1791,9 +1822,10 @@ function copyReport(){
   const cash=Math.max(0,byPay(s,'cash')-returnByPay(t,'cash'));
   const mpesa=Math.max(0,byPay(s,'mpesa')-returnByPay(t,'mpesa'));
   const deni=Math.max(0,byPay(s,'deni')-returnByPay(t,'deni'));
+  const ownerAmt=Math.max(0,byPay(s,'owner')-returnByPay(t,'owner'));
   const sold=cash+mpesa;
   const out=DB.bar+' — '+todayStr()+' (Kaunta)\n\n'+
-    'Collected: '+kes(sold)+'\n  Cash: '+kes(cash)+'\n  M-Pesa: '+kes(mpesa)+'\nDebt today: '+kes(deni)+'\nReturns: '+kes(returnAmt(t))+' ('+returnsOnly(t).length+' items)\nSales: '+s.length+
+    'Collected: '+kes(sold)+'\n  Cash: '+kes(cash)+'\n  M-Pesa: '+kes(mpesa)+'\nDebt today: '+kes(deni)+'\nOwner / comps (not collected): '+kes(ownerAmt)+'\nReturns: '+kes(returnAmt(t))+' ('+returnsOnly(t).length+' items)\nSales: '+s.filter(x=>x.pay!=='owner').length+
     '\nDebt outstanding: '+kes(Object.values(DB.debts).reduce((a,b)=>a+b,0));
   if(navigator.clipboard) navigator.clipboard.writeText(out).then(()=>toast('Report copied')).catch(()=>toast(out));
   else toast(out);
@@ -2296,9 +2328,10 @@ function bandOne(id){
   const c=keg?Math.max(0,Math.round(Number(el?el.value:0)||0)):Math.max(0,Math.round((parseFloat(el?el.value:0)||0)*(isGoods(d)?1000:100))/(isGoods(d)?1000:100));
   TAKE[id]=c;
   const {base,restC,since}=takeBase(id);
-  const consumed=Math.max(0, base+restC-c);
+  const own=ownerAdj(DB.sales.filter(s=>s.t>(since||0)),id);
+  const consumed=Math.max(0, base+restC-c-(keg?own.units:own.units/Math.max(1,Ml(d))));
   const band=drinkBand(d,consumed);
-  const ledger=DB.sales.filter(s=>s.drink===id && s.t>(since||0)).reduce((a,s)=>a+s.price,0);
+  const ledger=DB.sales.filter(s=>s.drink===id && s.t>(since||0)).reduce((a,s)=>a+s.price,0)-own.money;
   const b=document.getElementById('ban-'+id); if(b) b.textContent='KES '+band.min+' – '+band.max;
   const m=document.getElementById('bandm-'+id); if(m) m.innerHTML='consumed <b>'+consumed.toFixed(keg?0:1)+' '+(keg?'ml':(isGoods(d)?esc(unitName(d)):'bottles'))+'</b> · ledger <b>'+kes(ledger)+'</b>';
   computeTakeTotals();
@@ -2308,9 +2341,11 @@ function computeTakeTotals(){
   DB.drinks.forEach(d=>{
     if(TAKE[d.id]==null) return;
     const {base,restC,since}=takeBase(d.id);
-    const band=drinkBand(d,Math.max(0, base+restC-TAKE[d.id]));
+    const own=ownerAdj(DB.sales.filter(s=>s.t>(since||0)),d.id);
+    const units=Math.max(0, base+restC-TAKE[d.id]-(isKeg(d)?own.units:own.units/Math.max(1,Ml(d))));
+    const band=drinkBand(d,units);
     Tmin+=band.min; Tmax+=band.max;
-    Tbook+=DB.sales.filter(s=>s.drink===d.id && s.t>(since||0)).reduce((a,s)=>a+s.price,0);
+    Tbook+=DB.sales.filter(s=>s.drink===d.id && s.t>(since||0)).reduce((a,s)=>a+s.price,0)-own.money;
   });
   const e=document.getElementById('takeExpected'); if(e) e.textContent='KES '+Tmin.toLocaleString('en-KE')+' – '+Tmax.toLocaleString('en-KE');
   const l=document.getElementById('takeLedger'); if(l) l.textContent=kes(Tbook);
@@ -2334,9 +2369,11 @@ function saveTake(){
   DB.drinks.forEach(d=>{
     if(TAKE[d.id]==null) return;
     const {base,restC,since}=takeBase(d.id);
-    const band=drinkBand(d,Math.max(0, base+restC-TAKE[d.id]));
+    const own=ownerAdj(DB.sales.filter(s=>s.t>(since||0)),d.id);
+    const units=Math.max(0, base+restC-TAKE[d.id]-(isKeg(d)?own.units:own.units/Math.max(1,Ml(d))));
+    const band=drinkBand(d,units);
     a+=band.min; b+=band.max;
-    c+=DB.sales.filter(s=>s.drink===d.id && s.t>(since||0)).reduce((x,s)=>x+s.price,0);
+    c+=DB.sales.filter(s=>s.drink===d.id && s.t>(since||0)).reduce((x,s)=>x+s.price,0)-own.money;
   });
   const totals={min:Math.round(a),max:Math.round(b),ledger:c, from:takeSince(), note};
   DB.drinks.forEach(d=>{
@@ -2593,6 +2630,7 @@ function endShift(){
   const expCash=sales.filter(x=>x.pay==='cash').reduce((a,x)=>a+(x.price||0),0);
   const expMpesa=sales.filter(x=>x.pay==='mpesa').reduce((a,x)=>a+(x.price||0),0);
   const expDeni=sales.filter(x=>x.pay==='deni').reduce((a,x)=>a+(x.price||0),0);
+  const expOwner=sales.filter(x=>x.pay==='owner').reduce((a,x)=>a+(x.price||0),0);
   openSheet(`
     <h3 class="serif">Hand over · ${esc(s.user_name||'this shift')}</h3>
     <p style="color:var(--dim);font-size:12.5px;margin-bottom:12px">Count the till, then type what you actually have. Kaunta shows the difference from the books so the handover is clean.</p>
@@ -2600,6 +2638,7 @@ function endShift(){
     <div class="subrow"><span>Expected cash</span><b>${kes(expCash)}</b></div>
     <div class="subrow"><span>Expected M-Pesa</span><b>${kes(expMpesa)}</b></div>
     <div class="subrow"><span>Expected debt</span><b>${kes(expDeni)}</b></div>
+    <div class="subrow"><span>Owner / comps · not in till</span><b>${kes(expOwner)}</b></div>
     <label class="lbl">Cash counted (KES)</label>
     <input id="hoCash" type="number" placeholder="0" oninput="hoCalc(${expCash},${expMpesa},${expDeni})">
     <label class="lbl">M-Pesa counted (KES)</label>

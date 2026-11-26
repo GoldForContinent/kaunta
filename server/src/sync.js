@@ -47,7 +47,7 @@ function cupsOf(d) {
     return Array.isArray(v) ? v : [];
   } catch (e) { return []; }
 }
-function isKeg(d) {
+export function isKeg(d) {
   return !!(d && (+d.keg || (!d.keg && cupsOf(d).length)));
 }
 function isGoods(d) { return !!(d && +d.goods); }
@@ -55,7 +55,7 @@ function goodsHasSub(d) { return isGoods(d) && (+d.shot_ml || 0) > 0 && (+d.shot
 function cupRates(d) {
   return cupsOf(d).map(c => (c && +c.ml > 0 && +c.price > 0) ? (+c.price) / (+c.ml) : 0).filter(r => r > 0);
 }
-function pourMlOf(info, size, qty) {
+export function pourMlOf(info, size, qty) {
   const n = Math.max(1, Math.round(qty || 1));
   if (!info) return 0;
   if (size && size.startsWith('cup')) {
@@ -375,9 +375,20 @@ async function buildStocktake(DB, barId, op, now) {
 
   const restockRows = since ? (await DB.prepare('SELECT drink, qty, t FROM restocks WHERE bar_id = ? AND t > ?').bind(barId, since).all()).results || [] : (await DB.prepare('SELECT drink, qty, t FROM restocks WHERE bar_id = ?').bind(barId).all()).results || [];
   const wasteRows = since ? (await DB.prepare('SELECT drink, qty, t FROM waste WHERE bar_id = ? AND t > ?').bind(barId, since).all()).results || [] : (await DB.prepare('SELECT drink, qty, t FROM waste WHERE bar_id = ?').bind(barId).all()).results || [];
-  const saleRows = (await DB.prepare("SELECT drink, price FROM sales WHERE bar_id = ? AND t > ? AND drink NOT IN ('_pay','_deni')").bind(barId, since).all()).results || [];
-  const ledgerBy = {};
-  saleRows.forEach((s) => { ledgerBy[s.drink] = (ledgerBy[s.drink] || 0) + s.price; });
+  const saleRows = (await DB.prepare("SELECT drink, price, pay, size, qty FROM sales WHERE bar_id = ? AND t > ? AND drink NOT IN ('_pay','_deni')").bind(barId, since).all()).results || [];
+  const ledgerBy = {}, ownerBy = {};
+  const infoBy = {};
+  drinks.forEach((d) => { infoBy[d.id] = d; });
+  /* Owner comps left the shelf but no money was collected: track their units and
+     value so they are excused from the expected-till comparison. */
+  saleRows.forEach((s) => {
+    ledgerBy[s.drink] = (ledgerBy[s.drink] || 0) + s.price;
+    if (String(s.pay || '') === 'owner') {
+      const o = ownerBy[s.drink] = ownerBy[s.drink] || { money: 0, units: 0 };
+      o.money += s.price || 0;
+      o.units += ((s.price || 0) < 0 ? -1 : 1) * pourMlOf(infoBy[s.drink], s.size, s.qty);
+    }
+  });
 
   const stmts = [];
   const items = {};
@@ -393,14 +404,16 @@ async function buildStocktake(DB, barId, op, now) {
     const baseC = prevC != null ? prevC : Math.max(0, Math.round((+d.open || 0) * dp) / dp);
     const restockC = restockRows.filter((r) => r.drink === d.id).reduce((a, r) => a + (r.qty || 0), 0);
     const wasteC = wasteRows.filter((w) => w.drink === d.id).reduce((a, w) => a + (w.qty || 0), 0);
-    const consumed = Math.max(0, baseC + restockC - wasteC - cNow);
     const size = Math.max(1, parseFloat(d.size) || (goods ? 1 : 250));
+    const mark = ownerBy[d.id] || { money: 0, units: 0 };
+    const ownerShelf = keg ? mark.units : mark.units / size;
+    const consumed = Math.max(0, baseC + restockC - wasteC - ownerShelf - cNow);
     const band = serverBand(d, consumed);
-    const ledger = ledgerBy[d.id] || 0;
+    const ledger = (ledgerBy[d.id] || 0) - mark.money;
     Tmin += band.min; Tmax += band.max; Tbook += ledger;
     items[d.id] = {
       count: cNow, consumed_bottles: keg ? 0 : Math.round(consumed * dp) / dp,
-      consumed_ml: keg ? consumed : 0, size, keg: keg ? 1 : 0, goods: goods ? 1 : 0, min: band.min, max: band.max, ledger,
+      consumed_ml: keg ? consumed : 0, size, keg: keg ? 1 : 0, goods: goods ? 1 : 0, min: band.min, max: band.max, ledger, owner: mark.money,
     };
     const nextOpen = keg ? cNow : goods ? cNow : Math.round(cNow);
     const nextMl = keg ? cNow : Math.round(cNow * size);

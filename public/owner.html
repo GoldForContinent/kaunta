@@ -41,6 +41,7 @@ main{padding:16px}
   background:linear-gradient(120deg,#ffe3a3,#e9b95c 48%,#c98a2e);-webkit-background-clip:text;background-clip:text;color:transparent}
 .money.red{background:linear-gradient(120deg,#ff9a7a,#ff5c38 55%,#c93a17);-webkit-background-clip:text;background-clip:text;color:transparent}
 .money.grn{background:linear-gradient(120deg,#86e3a0,#3fae5a 55%,#2c8a44);-webkit-background-clip:text;background-clip:text;color:transparent}
+.money.blue{background:linear-gradient(120deg,#dceafd,#93b7e6 55%,#5d7fa9);-webkit-background-clip:text;background-clip:text;color:transparent}
 .k{font-size:11px;color:var(--dim);font-family:var(--sans);font-weight:700;letter-spacing:1px;vertical-align:4px;margin-right:2px}
 .fig-lg{font-size:42px;line-height:1}
 .hero{border-radius:22px;padding:20px;position:relative;overflow:hidden;
@@ -69,6 +70,7 @@ main{padding:16px}
 .tag.cash{background:rgba(233,185,92,.13);color:var(--gold)}
 .tag.mpesa{background:rgba(63,174,90,.12);color:var(--mpesa)}
 .tag.deni{background:rgba(255,92,56,.12);color:var(--ember)}
+.tag.owner{background:rgba(147,183,230,.13);color:#93b7e6}
 .tag.return{background:rgba(255,92,56,.16);color:var(--ember)}
 .heat{display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:6px}
 .heat i{flex:1;border-radius:3px 3px 0 0;background:rgba(233,185,92,.16);position:relative;min-height:3px}
@@ -188,6 +190,11 @@ body.nxt .overlay{padding-top:76px}
       <div class="stat"><div class="lbl"><span class="cdot" style="background:#f4ead6"></span>Sales today</div><div class="val" id="sCount" style="color:var(--paper)">0</div></div>
       <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--ember)"></span>Returns today</div><div class="val money red" id="sReturns">KES 0</div></div>
       <div class="stat"><div class="lbl"><span class="cdot" style="background:var(--ember)"></span>Items returned</div><div class="val" id="sReturnCount" style="color:var(--paper)">0</div></div>
+      <div class="stat" style="grid-column:1/-1;border-color:rgba(147,183,230,.3)">
+        <div class="lbl"><span class="cdot" style="background:#93b7e6"></span>Owner / comps · stock used, no money collected</div>
+        <div class="val money blue" id="sOwner">KES 0</div>
+        <div class="mini" style="margin:6px 0 0">Tagged at the till so staff are never blamed for these items. Excluded from collected money and from the expected-till check.</div>
+      </div>
     </div>
     <div class="card">
       <div class="cardhead">Sales pace today</div>
@@ -415,6 +422,7 @@ async function loadSummary(){
   document.getElementById('heroReturns').textContent=kes(d.totals.returns||0);
   document.getElementById('sReturns').textContent=kes(d.totals.returns||0);
   document.getElementById('sReturnCount').textContent=d.totals.returnsCount||0;
+  document.getElementById('sOwner').textContent=kes(d.totals.owner||0);
 
   const hkes=d.hourlyKes||d.hourly?.map(x=>0)||new Array(24).fill(0);
   const max=Math.max(...hkes,1);
@@ -480,6 +488,8 @@ function renderStocktake(d){
   const prevC={};
   if(lastTake){ try{ prevC=JSON.parse(lastTake.counts||'{}'); }catch(e){} }
   const agg=d.take_agg||{};
+  const ownerAgg=d.owner_take_agg||{}, ownerUnits=d.owner_take_units||{};
+  let ownerTotal=0;
   const restockQ=id=>(d.restocks||[]).filter(r=>r.drink===id && r.t>takeSince).reduce((a,r)=>a+r.qty,0);
   const wasteQ=id=>(d.waste||[]).filter(w=>w.drink===id && w.t>takeSince).reduce((a,w)=>a+w.qty,0);
   let Tmin=0,Tmax=0,Tbook=0;
@@ -492,9 +502,10 @@ function renderStocktake(d){
     const c=TAKE_COUNTS[x.id];
     const base=(prevC[x.id]!=null)? Math.max(0,Math.round(Number(prevC[x.id])*dp)/dp) : Math.max(0,Math.round((+x.open||0)*dp)/dp);
     const has=base+restockQ(x.id)-wasteQ(x.id);
-    const sold=Math.max(0,has-c);
+    const ownM=ownerAgg[x.id]||0; ownerTotal+=ownM;
+    const sold=Math.max(0,has-c-(ownerUnits[x.id]||0));
     const band=drinkBand(x,sold);
-    const book=agg[x.id]||0;
+    const book=(agg[x.id]||0)-ownM;
     Tmin+=band.min; Tmax+=band.max; Tbook+=book;
     const flag=(book<band.min-1)?' · <span style="color:var(--ember)">LOW</span>':(book>band.max+1)?' · <span style="color:var(--ember)">HIGH</span>':'';
     const soldLine=keg?('sold '+sold.toFixed(0)+' of '+has.toFixed(0)+' ml'+(wasteQ(x.id)?' · '+wasteQ(x.id).toFixed(0)+' ml wasted/tapped off':''))
@@ -519,8 +530,9 @@ function renderStocktake(d){
     hist+='<div class="row" style="padding:5px 0"><div class="l"><b>'+when+'</b><span>'+esc(st.note||(st.by_name||'stock-take'))+'</span></div><div class="r"><b class="money" style="font-size:13px">'+kes(t.min||0)+' – '+kes(t.max||0)+'</b><br><span class="mini" style="margin:0">ledger '+kes(t.ledger||0)+'</span></div></div>';
   });
   el.innerHTML='<div class="subrow" style="border:none;font-size:11px;color:var(--dim);padding-bottom:4px">Set what is on hand now — total ml for kegs, bottles for drinks, packs/pieces for goods. The expected money band is what the consumed stock should have earned.</div>'+rows+
-    '<div class="subrow" style="margin-top:8px"><span>Expected since last take</span><b class="money">'+kes(Tmin)+' – '+kes(Tmax)+'</b></div>'+
+    '<div class="subrow" style="margin-top:8px"><span>Expected in till since last take</span><b class="money">'+kes(Tmin)+' – '+kes(Tmax)+'</b></div>'+
     '<div class="subrow"><span>Recorded on ledger</span><b '+(wind?'style="color:var(--ember)"':'')+'>'+kes(Tbook)+'</b></div>'+
+    '<div class="subrow"><span>Owner / comps · not collected</span><b class="money blue">'+kes(Math.max(0,ownerTotal))+'</b></div>'+
     '<label class="row" style="border:none;align-items:center;gap:10px;margin:10px 0 0;cursor:pointer"><input type="checkbox" id="tkShelfOwner" checked style="width:auto;margin:0;flex:none"><span class="mini" style="margin:0">Lock the shelf to these amounts — starts a fresh poured baseline from this count.</span></label>'+
     '<div class="rowflex" style="margin-top:10px;gap:8px">'+
       '<button class="btn primary" style="flex:1" onclick="saveTakeOwner()">Save stock-take · record</button>'+
@@ -568,7 +580,8 @@ function renderShifts(d){
       '<div class="cardhead" style="color:var(--mpesa)">Shift on now</div>'+
       '<div class="subrow"><span>Bartender</span><b>'+esc(open.user_name||'Unknown staff')+'</b></div>'+
       '<div class="subrow"><span>Opened</span><b>'+hhmm(open.open_at)+'</b></div>'+
-      '<div class="subrow"><span>Sales this shift</span><b>'+open.totals.n+' · '+kes((open.totals.cash||0)+(open.totals.mpesa||0)+(open.totals.deni||0))+'</b></div></div>';
+      '<div class="subrow"><span>Items this shift</span><b>'+open.totals.n+' · '+kes((open.totals.cash||0)+(open.totals.mpesa||0)+(open.totals.deni||0))+'</b></div>'+
+      +(open.totals.owner?'<div class="subrow"><span>Owner / comps</span><b class="money blue">'+kes(open.totals.owner)+'</b></div>':'')+'</div>';
   }
   if(uids.length){
     html+='<div class="cardhead" style="margin-top:4px">Who sold today</div>';
@@ -576,7 +589,7 @@ function renderShifts(d){
       const o=ut[uid];
       return '<div class="row"><div class="l"><b>'+esc(o.name||'Staff')+'</b><span>'+o.n+' sales</span></div>'+
         '<div class="r" style="display:flex;gap:6px;flex-wrap:wrap">'+
-        '<span class="pill2">C '+kes(o.cash)+'</span><span class="pill2 ok">MP '+kes(o.mpesa)+'</span>'+(o.deni?'<span class="pill2 warn">D '+kes(o.deni)+'</span>':'')+'</div></div>';
+        '<span class="pill2">C '+kes(o.cash)+'</span><span class="pill2 ok">MP '+kes(o.mpesa)+'</span>'+(o.deni?'<span class="pill2 warn">D '+kes(o.deni)+'</span>':'')+(o.owner?'<span class="pill2" style="color:#93b7e6">OWNER '+kes(o.owner)+'</span>':'')+'</div></div>';
     }).join('');
   }
   const past=shifts.filter(s=>s.close_at).slice(0,6);
@@ -628,6 +641,7 @@ function empDel(id){
   api('/api/bar/staff/delete',{id}).then(r=>{ if(!r.ok){ toastRes(r.data.error||'Could not remove'); return; } toastRes('Employee removed'); renderEmployees(); });
 }
 /* ---- audit trail ---- */
+const PAY_LBL={cash:'Cash',mpesa:'M-Pesa',deni:'Debt',owner:'Owner'};
 function auditText(it){
   const p=it.payload||{};
   const dmap={}; (LAST_SUMMARY&&LAST_SUMMARY.drinks||[]).forEach(x=>{ dmap[x.id]=x; });
@@ -635,8 +649,8 @@ function auditText(it){
   const drink=dobj?dobj.name:'a drink';
   const unit=(p.keg!==undefined?!!p.keg:isKeg(dobj))?' ml':(isGoods(dobj)?' '+unitName(dobj):' bottles');
   switch(it.type){
-    case 'sale': return 'Sold '+drink+(p.qty>1?' ×'+p.qty:'')+' · '+kes(p.price)+(p.pay?' · '+p.pay:'');
-    case 'return_sale': return 'Returned '+drink+(p.qty>1?' ×'+p.qty:'')+' · '+kes(Math.abs(p.price||0))+(p.pay?' · '+p.pay:'');
+    case 'sale': return (String(p.pay||'')==='owner'?'Owner took/bought '+drink:'Sold '+drink)+(p.qty>1?' ×'+p.qty:'')+' · '+kes(p.price)+(p.pay?' · '+(PAY_LBL[p.pay]||p.pay):'');
+    case 'return_sale': return 'Returned '+drink+(p.qty>1?' ×'+p.qty:'')+' · '+kes(Math.abs(p.price||0))+(p.pay?' · '+(PAY_LBL[p.pay]||p.pay):'');
     case 'restock': return 'Restocked '+drink+' +'+(p.qty||1)+unit;
     case 'set_open': return 'Opened '+drink+' at '+(p.open||0)+unit;
     case 'set_barrels': return 'Set '+drink+' reserve to '+(p.barrels||0)+' full barrels';
@@ -723,8 +737,8 @@ function renderFeed(feed){
     const amt=Math.abs(s.price||0);
     const d=dmap[s.drink];
     const sizeLbl=sizeLabel(d,s.size);
-    return '<div class="row"><div class="l"><b>'+esc(s.name)+' '+(ret?'<span class="tag return">Return</span>':'')+' <span class="tag '+(s.size||'full')+'">'+esc(sizeLbl)+'</span>'+(s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':'')+'</b><span>'+lbl+' · '+(s.staff||s.who||'over counter')+'</span></div>'+
-      '<div class="r"><b class="money'+(ret?' red':'')+'" style="font-size:15px">'+kes(amt)+'</b><br><span class="tag '+s.pay+'">'+({cash:'Cash',mpesa:'M-Pesa',deni:'Debt'}[s.pay]||s.pay)+'</span></div></div>';
+    return '<div class="row"><div class="l"><b>'+esc(s.name)+' '+(ret?'<span class="tag return">Return</span>':'')+' <span class="tag '+(s.size||'full')+'">'+esc(sizeLbl)+'</span>'+(s.round?' <span class="tag" style="background:rgba(233,185,92,.14);color:var(--gold)">round</span>':'')+'</b><span>'+lbl+' · '+(s.pay==='owner'?('Owner'+(s.who?' → '+esc(s.who):'')):(s.staff||s.who||'over counter'))+'</span></div>'+
+      '<div class="r"><b class="money'+(ret?' red':(s.pay==='owner'?' blue':''))+'" style="font-size:15px">'+kes(amt)+'</b><br><span class="tag '+s.pay+'">'+(PAY_LBL[s.pay]||s.pay)+(s.pay==='owner'&&s.who?' · '+esc(s.who):'')+'</span></div></div>';
   }).join('');
 }
 const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);

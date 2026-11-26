@@ -1,7 +1,7 @@
 // Owner dashboard: a single pull of everything needed to render the live view.
 
 import { json } from './util.js';
-import { subOf } from './sync.js';
+import { subOf, pourMlOf, isKeg } from './sync.js';
 
 export async function summaryHandler({ DB }, ctx, q) {
   const barId = ctx.bar.id;
@@ -50,14 +50,33 @@ export async function summaryHandler({ DB }, ctx, q) {
     (takeAggRes.results || []).forEach((x) => { takeAgg[x.drink] = x.s; });
   }
 
+  /* Owner comps left the shelf but no money was collected. Expose their value and
+     shelf units so the stock-take card can excuse them on both sides of the check. */
+  const ownerTakeAgg = {}, ownerTakeUnits = {};
+  const ownerInfo = {};
+  (drinks.results || []).forEach((d) => { ownerInfo[d.id] = d; });
+  const ownerRows = (await DB.prepare("SELECT drink, price, size, qty FROM sales WHERE bar_id = ? AND t > ? AND t <= ? AND drink NOT IN ('_pay','_deni') AND pay = 'owner'").bind(barId, takeSince, until).all()).results || [];
+  ownerRows.forEach((s) => {
+    ownerTakeAgg[s.drink] = (ownerTakeAgg[s.drink] || 0) + (s.price || 0);
+    const info = ownerInfo[s.drink];
+    const raw = ((s.price || 0) < 0 ? -1 : 1) * pourMlOf(info, s.size, s.qty);
+    const shelf = isKeg(info) ? raw : raw / Math.max(1, +info?.size || 1);
+    ownerTakeUnits[s.drink] = (ownerTakeUnits[s.drink] || 0) + shelf;
+  });
+
   // Returns are stored as negative sale rows. Keep them out of the headline
   // collection figures (never show a bare negative) and report them separately.
   const RET_KEY = { cash: 'returnsCash', mpesa: 'returnsMpesa', deni: 'returnsDeni' };
-  const totals = { cash: 0, mpesa: 0, deni: 0, count: 0, returns: 0, returnsCash: 0, returnsMpesa: 0, returnsDeni: 0, returnsCount: 0 };
+  const totals = { cash: 0, mpesa: 0, deni: 0, owner: 0, count: 0, returns: 0, returnsCash: 0, returnsMpesa: 0, returnsDeni: 0, returnsCount: 0 };
   (totRows.results || []).forEach((r) => {
     const pay = String(r.pay || '');
     const refund = Math.max(0, r.refunds || 0);
     const refundN = Math.max(0, r.refund_n || 0);
+    if (pay === 'owner') {
+      // Owner comps are not collected money and are not refunds to a customer.
+      totals.owner = Math.max(0, (r.s || 0) - refund);
+      return;
+    }
     if (RET_KEY[pay]) totals[RET_KEY[pay]] += refund;
     totals.returns += refund;
     totals.returnsCount += refundN;
@@ -77,16 +96,19 @@ export async function summaryHandler({ DB }, ctx, q) {
   const agg = {};
   const drinkAgg = {};   // drinkId -> KES recorded today (all payment methods)
   const uidAgg = {};     // staff uid -> {name, cash, mpesa, deni, n}
+  const staffBucket = (s) => uidAgg[s.uid] = uidAgg[s.uid] || { name: s.staff || '', cash: 0, mpesa: 0, deni: 0, owner: 0, n: 0, returns: 0, returnsCash: 0, returnsMpesa: 0, returnsDeni: 0 };
   salesRaw.forEach((s) => {
     const isReturn = (s.price || 0) < 0;
+    const isOwner = String(s.pay || '') === 'owner';
     const h = new Date(s.t + tzMin * 60000).getUTCHours();
     hourly[h] = (hourly[h] || 0) + 1;
-    hourlyKes[h] = (hourlyKes[h] || 0) + (isReturn ? 0 : s.price || 0);
+    // Owner comps move stock but are not KES through the till.
+    hourlyKes[h] = (hourlyKes[h] || 0) + (isReturn || isOwner ? 0 : s.price || 0);
     // The stock-take ledger stays net: returning a drink really does undo its sale.
-    drinkAgg[s.drink] = (drinkAgg[s.drink] || 0) + s.price;
+    drinkAgg[s.drink] = (drinkAgg[s.drink] || 0) + (isOwner ? 0 : s.price);
     if (isReturn) {
-      if (s.uid) {
-        const o = uidAgg[s.uid] = uidAgg[s.uid] || { name: s.staff || '', cash: 0, mpesa: 0, deni: 0, n: 0, returns: 0, returnsCash: 0, returnsMpesa: 0, returnsDeni: 0 };
+      if (s.uid && !isOwner) {
+        const o = staffBucket(s);
         const amt = Math.abs(s.price || 0);
         o.returns = (o.returns || 0) + amt;
         const rk = RET_KEY[String(s.pay || '')];
@@ -94,9 +116,9 @@ export async function summaryHandler({ DB }, ctx, q) {
       }
       return;
     }
-    agg[s.drink] = (agg[s.drink] || 0) + s.price;
+    agg[s.drink] = (agg[s.drink] || 0) + (isOwner ? 0 : s.price);
     if (s.uid) {
-      const o = uidAgg[s.uid] = uidAgg[s.uid] || { name: s.staff || '', cash: 0, mpesa: 0, deni: 0, n: 0, returns: 0, returnsCash: 0, returnsMpesa: 0, returnsDeni: 0 };
+      const o = staffBucket(s);
       o[s.pay] = (o[s.pay] || 0) + s.price;
       o.n++;
     }
@@ -124,9 +146,11 @@ export async function summaryHandler({ DB }, ctx, q) {
   const shifts = (shiftsRes.results || []).map((sh) => {
     const end = sh.close_at || now;
     const mine = salesRaw.filter((s) => s.t >= sh.open_at && s.t <= end);
-    const totals = { cash: 0, mpesa: 0, deni: 0, n: 0, returns: 0, returnsCash: 0, returnsMpesa: 0, returnsDeni: 0 };
+    const totals = { cash: 0, mpesa: 0, deni: 0, owner: 0, n: 0, returns: 0, returnsCash: 0, returnsMpesa: 0, returnsDeni: 0 };
     mine.forEach((s) => {
+      const isOwner = String(s.pay || '') === 'owner';
       if ((s.price || 0) < 0) {
+        if (isOwner) return;
         const amt = Math.abs(s.price || 0);
         totals.returns += amt;
         const rk = RET_KEY[String(s.pay || '')];
@@ -169,6 +193,8 @@ export async function summaryHandler({ DB }, ctx, q) {
     stocktakes: stocktakesRes.results || [],
     last_take: lastTake,
     take_agg: takeAgg,
+    owner_take_agg: ownerTakeAgg,
+    owner_take_units: ownerTakeUnits,
     drink_agg: drinkAgg,
     uid_totals: uidAgg,
     server_time: now,
