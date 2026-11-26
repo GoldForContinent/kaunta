@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   status             TEXT NOT NULL DEFAULT 'trial',   -- cached; recomputed in code
   trial_ends_at      INTEGER,                          -- ms epoch
   current_period_end INTEGER,                          -- ms epoch (paid until)
-  price_cents        INTEGER NOT NULL DEFAULT 100000,  -- KES 1,000 = 100000 cents
+  price_cents        INTEGER NOT NULL DEFAULT 99900,   -- KES 999 = 99900 cents
   updated_at         INTEGER NOT NULL
 );
 

@@ -540,7 +540,7 @@ body.nxt .overlay{padding-top:76px}
     <div id="suOwnerPlan">
       <div class="ctlbl" style="margin-top:10px">Your bar tier</div>
       <div class="seg" id="suTier">
-        <div class="chip sel" data-t="small">Small · KES 1,000</div>
+        <div class="chip sel" data-t="small">Small · KES 999</div>
         <div class="chip" data-t="club">Club · KES 1,999</div>
       </div>
       <div class="ctlbl" style="margin-top:10px">How you want to pay</div>
@@ -3440,9 +3440,9 @@ if('serviceWorker' in navigator){
     const el=oE('plan'); if(!el) return;
     const s=SUB||{}, tier=s.plan||'small', pay=s.pay_mode||'manual';
     const chip=(id,v,label,on)=>'<div class="chip'+(on?' sel':'')+'" data-v="'+v+'">'+label+'</div>';
-    el.innerHTML='<div class="subrow"><span>Current tier</span><b>'+(tier==='club'?'Big club':'Small bar')+' · '+kes(Math.round((s.price_cents||100000)/100))+'/month</b></div>'+
+    el.innerHTML='<div class="subrow"><span>Current tier</span><b>'+(tier==='club'?'Big club':'Small bar')+' · '+kes(Math.round((s.price_cents||99900)/100))+'/month</b></div>'+
       '<div class="ctlbl" style="margin-top:10px">Tier</div><div class="seg" id="o-planTier">'+
-        chip('tier','small','Small · KES 1,000',tier!=='club')+
+        chip('tier','small','Small · KES 999',tier!=='club')+
         chip('tier','club','Club · KES 1,999',tier==='club')+'</div>'+
       '<div class="ctlbl" style="margin-top:10px">Payment option</div><div class="seg" id="o-planPay">'+
         chip('pay','stk','M-Pesa prompt',pay!=='manual')+

@@ -47,7 +47,7 @@ export function randomSalt() {
 export function subState(row, now = Date.now()) {
   const trialEnd = row?.trial_ends_at || 0;
   const periodEnd = row?.current_period_end || 0;
-  const priceCents = row?.price_cents || 100000;
+  const priceCents = row?.price_cents || 99900;
   let status = 'suspended';
   let graceEnd = 0;
   if (periodEnd > 0 && now <= periodEnd) {

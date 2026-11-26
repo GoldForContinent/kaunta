@@ -43,8 +43,8 @@ async function creditPeriod(DB, barId, amountKsh, via, ref, checkoutId, phone) {
   ]);
   if (!subRow) return { ok: false, error: 'no subscription' };
   if (dup) return { ok: true, already: true };
-  if (Math.round(amountKsh) !== Math.round((subRow.price_cents || 100000) / 100)) {
-    return { ok: false, error: `Expected KES ${(subRow.price_cents || 100000) / 100}, got ${amountKsh}` };
+  if (Math.round(amountKsh) !== Math.round((subRow.price_cents || 99900) / 100)) {
+    return { ok: false, error: `Expected KES ${(subRow.price_cents || 99900) / 100}, got ${amountKsh}` };
   }
   const now = Date.now();
   let start = now;
@@ -67,14 +67,14 @@ export async function payInfo(env, ctx) {
   return json({
     ok: true,
     mode: manual ? 'manual' : 'stk',
-    price: Math.round((sub.price_cents || 100000) / 100),
+    price: Math.round((sub.price_cents || 99900) / 100),
     paybill: env.MPESA_TILL || '',
     account: ctx.bar.slug,
     msg: manual ? 'Lipa na M-Pesa — then confirm the code.' : 'An M-Pesa prompt is sent to the owner’s phone.',
   });
 }
 
-const PLAN_PRICE = { small: 100000, club: 199900 };
+const PLAN_PRICE = { small: 99900, club: 199900 };
 
 // Owner changes their tier and preferred M-Pesa option at any time.
 export async function updatePlan(env, ctx) {
@@ -91,7 +91,7 @@ export async function updatePlan(env, ctx) {
 export async function payRequest(env, ctx) {
   if (ctx.user.role !== 'owner') return json({ error: 'Only the bar owner can pay' }, 403);
   const sub = await subOf(env.DB, ctx.bar.id);
-  const price = Math.round((sub.price_cents || 100000) / 100);
+  const price = Math.round((sub.price_cents || 99900) / 100);
   const instructions = {
     price,
     period_days: 30,
@@ -176,7 +176,7 @@ export async function payVerify(env, ctx) {
   }
   const ref = String((ctx.body && ctx.body.ref) || '').trim();
   if (!ref) return json({ error: 'Paste the M-Pesa transaction code (e.g. SLK3XQ2B9L)' }, 400);
-  const result = await creditPeriod(env.DB, ctx.bar.id, Math.round((sub.price_cents || 100000) / 100), 'manual', ref, null, null);
+  const result = await creditPeriod(env.DB, ctx.bar.id, Math.round((sub.price_cents || 99900) / 100), 'manual', ref, null, null);
   if (!result.ok) return json({ error: result.error || 'Could not verify payment' }, 400);
   return json({ ok: true, ...result });
 }

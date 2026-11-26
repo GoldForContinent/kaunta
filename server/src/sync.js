@@ -26,10 +26,10 @@ export async function subOf(DB, barId) {
   let row = await DB.prepare('SELECT * FROM subscriptions WHERE bar_id = ?').bind(barId).first();
   if (!row) {
     const now = Date.now();
-    await DB.prepare('INSERT INTO subscriptions (bar_id, status, trial_ends_at, current_period_end, price_cents, plan, pay_mode, updated_at) VALUES (?,?,?,NULL,100000,?,?,?)')
+    await DB.prepare('INSERT INTO subscriptions (bar_id, status, trial_ends_at, current_period_end, price_cents, plan, pay_mode, updated_at) VALUES (?,?,?,NULL,99900,?,?,?)')
       .bind(barId, 'trial', now + TRIAL, 'small', 'manual', now)
       .run();
-    row = { bar_id: barId, trial_ends_at: now + TRIAL, current_period_end: null, price_cents: 100000, plan: 'small', pay_mode: 'manual' };
+    row = { bar_id: barId, trial_ends_at: now + TRIAL, current_period_end: null, price_cents: 99900, plan: 'small', pay_mode: 'manual' };
   }
   return subState(row);
 }

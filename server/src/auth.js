@@ -13,7 +13,7 @@ function slugify(s) {
 }
 
 const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
-const PLAN_PRICE = { small: 100000, club: 199900 };  // KES 1,000 / 1,999
+const PLAN_PRICE = { small: 99900, club: 199900 };  // KES 999 / 1,999
 
 export async function register({ DB }, body) {
   const name = (body.name || '').toString().trim().slice(0, 60);
