@@ -34,7 +34,7 @@ export async function subOf(DB, barId) {
   return subState(row);
 }
 
-const TYPES = new Set(['sale', 'return_sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'delete_drink', 'new_day', 'set_bar', 'restock', 'set_barrels', 'restock_barrels', 'set_barrel_ml', 'tap_barrel', 'set_drink_split', 'set_shift', 'stocktake']);
+const TYPES = new Set(['sale', 'return_sale', 'add_debt', 'debt_payment', 'set_open', 'set_price', 'add_drink', 'delete_drink', 'new_day', 'set_bar', 'restock', 'waste', 'set_barrels', 'restock_barrels', 'set_barrel_ml', 'tap_barrel', 'set_drink_split', 'set_shift', 'stocktake']);
 
 // Who did it? Ops carry the actor in different fields depending on type.
 function actorId(op) { return String(op.uid || op.by_user || '').slice(0, 64); }
@@ -159,8 +159,11 @@ export function applyStatements(barId, op, now, sizeOf) {
         const info = sizeOf(op.drink);
         const keg = kegUnitsOf(info, op);
         const open = isGoods(info) ? Math.max(0, Math.round((op.open || 0) * 1000) / 1000) : Math.max(0, Math.round(op.open || 0));
+        const ml = keg ? open : isGoods(info)
+          ? Math.round(open * ((info && info.size) || 0) * 1000) / 1000
+          : Math.round(open * ((info && info.size) || 0));
         q('UPDATE drinks SET open = ?, stockMl = ? WHERE id = ? AND bar_id = ?',
-          open, keg ? open : Math.round(open * ((info && info.size) || 0)), String(op.drink), barId);
+          open, ml, String(op.drink), barId);
       }
       break;
     }
@@ -211,8 +214,27 @@ export function applyStatements(barId, op, now, sizeOf) {
         String(op.id || 'r' + t + (op.drink || '')).slice(0, 64), barId, String(op.drink || ''), qty, t);
       // Restocks are logged separately from the counted baseline, otherwise a
       // stock-take would count the same received stock twice.
+      const ml = keg ? qty : goods ? Math.round(qty * ((info && info.size) || 0) * 1000) / 1000
+        : Math.round(qty * ((info && info.size) || 0));
       q('UPDATE drinks SET stockMl = stockMl + ? WHERE id = ? AND bar_id = ?',
-        keg ? qty : Math.round(qty * ((info && info.size) || 0)), String(op.drink || ''), barId);
+        ml, String(op.drink || ''), barId);
+      break;
+    }
+    case 'waste': {
+      const info = sizeOf(op.drink);
+      const keg = kegUnitsOf(info, op);
+      const goods = isGoods(info);
+      const qty = keg ? Math.max(0, Math.round(op.qty || 0))
+        : goods ? Math.max(0.001, Math.round((op.qty || 0) * 1000) / 1000)
+          : Math.max(1, Math.round(op.qty || 1));
+      const t = Math.round(op.t || now);
+      q('INSERT INTO waste (id, bar_id, drink, qty, t) VALUES (?,?,?,?,?)',
+        String(op.id || 'w' + t + (op.drink || '')).slice(0, 64), barId, String(op.drink || ''), qty, t);
+      // Manual decrements are waste/spillage and do not move the counting baseline.
+      const ml = keg ? qty : goods ? Math.round(qty * ((info && info.size) || 0) * 1000) / 1000
+        : Math.round(qty * ((info && info.size) || 0));
+      q('UPDATE drinks SET stockMl = MAX(0, stockMl - ?) WHERE id = ? AND bar_id = ?',
+        ml, String(op.drink || ''), barId);
       break;
     }
     case 'set_barrels': {
@@ -416,7 +438,7 @@ async function buildStocktake(DB, barId, op, now) {
       consumed_ml: keg ? consumed : 0, size, keg: keg ? 1 : 0, goods: goods ? 1 : 0, min: band.min, max: band.max, ledger, owner: mark.money,
     };
     const nextOpen = keg ? cNow : goods ? cNow : Math.round(cNow);
-    const nextMl = keg ? cNow : Math.round(cNow * size);
+    const nextMl = keg ? cNow : goods ? Math.round(cNow * size * 1000) / 1000 : Math.round(cNow * size);
     // A keg stock-take counts TOTAL ml (active barrel + sealed barrels). Derive the
     // reserve from full-barrel multiples so the next tap knows what is in line.
     const nextBarrels = keg ? Math.max(0, Math.floor(cNow / Math.max(1, +d.barrelMl || 50000))) : 0;

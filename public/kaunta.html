@@ -956,6 +956,20 @@ function applyRemote(type,p){
       }
       break;
     }
+    case 'waste': {
+      const d=DB.drinks.find(x=>x.id===p.drink);
+      if(d){
+        const keg=p.keg===undefined ? !d.legacyKegUnits && isKeg(d) : !!p.keg;
+        const goods=isGoods(d);
+        const q=keg?Math.max(0,Math.round(Number(p.qty)||0)):goods?Math.max(0.001,Math.round((Number(p.qty)||0)*1000)/1000):Math.max(1,Math.round(Number(p.qty)||1));
+        // A manual decrement is waste/spillage: it leaves the counting baseline alone.
+        if(keg){ d.stockMl=Math.max(0,(Number(d.stockMl)||0)-q); }
+        else { d.stockMl=Math.max(0,(Number(d.stockMl)||0)-q*Ml(d)); }
+        DB.waste.push({drink:p.drink,qty:q,t:p.t||Date.now()});
+        if(p.keg) d.legacyKegUnits=0;
+      }
+      break;
+    }
     case 'set_barrels': {
       const d=DB.drinks.find(x=>x.id===p.drink);
       if(d){
@@ -1035,7 +1049,7 @@ function applyRemote(type,p){
             const b=Number(d.barrelMl)||50000;
             d.barrels=Math.max(0,Math.floor(c/b));
             d.open=c; d.stockMl=c;
-          } else { d.open=isGoods(d)?c:Math.round(c); d.stockMl=Math.round(c*Ml(d)); d.barrels=0; }
+          } else { d.open=isGoods(d)?c:Math.round(c); d.stockMl=isGoods(d)?Math.round(c*Ml(d)*1000)/1000:Math.round(c*Ml(d)); d.barrels=0; }
           if(p.set_shelf) d.soldMl=0;
         }
       });
@@ -2136,9 +2150,9 @@ function renderStock(){
       </div>
       <div><label class="lbl">Cup prices</label><div class="mini" style="margin-top:0">${cupRows}</div></div>`
     :`
-      <div><label class="lbl">Opening ${goods?esc(unit):'bottles'}</label>
+      <div><label class="lbl">On hand now · ${goods?esc(unit):'bottles'}</label>
         <div class="stepper">
-          <button onclick="setOpen('${d.id}',-1)">−</button><span id="op-${d.id}">${d.open}</span><button onclick="setOpen('${d.id}',1)">+</button>
+          <button onclick="adjustStock('${d.id}',-1)">−</button><span id="op-${d.id}">${goods?(Math.round((roundLeft(d)||0)/Ml(d)*1000)/1000):Math.max(0,Math.round((roundLeft(d)||0)/Math.max(1,Ml(d))))}</span><button onclick="adjustStock('${d.id}',1)">+</button>
         </div>
       </div>
       ${priceControl}`;
@@ -2276,14 +2290,15 @@ function takeBase(id){
   const lastTake=(DB.stocktakes||[])[0]||null;
   if(lastTake){ try{ base=Number((lastTake.counts||{})[id])||0; }catch(e){ base=0; } }
   else { const d=DB.drinks.find(x=>x.id===id); const dp=d&&isGoods(d)?1000:1; base=Math.max(0,Math.round((Number(d&&d.open)||0)*dp)/dp); }
+  const d=DB.drinks.find(x=>x.id===id), dp=d&&isGoods(d)?1000:1;
   const restC=(DB.restocks||[]).filter(r=>r.drink===id && r.t>since).reduce((a,r)=>a+Number(r.qty||0),0);
-  const wasteC=(DB.waste||[]).filter(w=>w.drink===id && w.t>since).reduce((a,w)=>a+Math.round(w.qty||0),0);
+  const wasteC=(DB.waste||[]).filter(w=>w.drink===id && w.t>since).reduce((a,w)=>a+Math.round(Number(w.qty||0)*dp)/dp,0);
   return {base, restC:restC-wasteC, since};
 }
 function openTake(focusId){
   const lastTake=(DB.stocktakes||[])[0]||null;
   TAKE={};
-  DB.drinks.forEach(d=>{ TAKE[d.id]=isKeg(d)?Math.max(0,Math.round(roundLeft(d)||0)):Math.max(0,Math.round((roundLeft(d)||0)/Ml(d)*100)/100); });
+  DB.drinks.forEach(d=>{ const dp=isGoods(d)?1000:100; TAKE[d.id]=isKeg(d)?Math.max(0,Math.round(roundLeft(d)||0)):Math.max(0,Math.round((roundLeft(d)||0)/Math.max(1,Ml(d))*dp)/dp); });
   const rows=DB.drinks.map(d=>{
     const keg=isKeg(d), goods=isGoods(d);
     const desc=keg?`~${activeMlOf(d)} ml active · ${d.barrels||0} full barrels reserve`
@@ -2384,7 +2399,7 @@ function saveTake(){
       const bm=Number(d.barrelMl)||50000;
       d.barrels=Math.max(0,Math.floor(c/bm));
       d.open=c; d.stockMl=c;
-    } else { d.open=isGoods(d)?c:Math.round(c); d.stockMl=Math.round(c*Ml(d)); d.barrels=0; }
+    } else { d.open=isGoods(d)?c:Math.round(c); d.stockMl=isGoods(d)?Math.round(c*Ml(d)*1000)/1000:Math.round(c*Ml(d)); d.barrels=0; }
     if(setShelf) d.soldMl=0;
   });
   DB.stocktakes.unshift({id:rid, t, note, counts, totals, set_shelf:setShelf});
@@ -2668,13 +2683,30 @@ function doEndShift(){
   activeStaff=null;
   closeSheet(); renderShift(); renderDash(); toast('Shift handed over');
 }
-function setOpen(id,n){
+/* The stock stepper is "on hand now", not the opening baseline. Increases are
+   logged as received stock and decreases as waste, so the expected-money window
+   still reads the same baseline as the count-shelf form. */
+function adjustStock(id,n){
   const d=DB.drinks.find(x=>x.id===id); if(!d) return;
   if(isKeg(d)) return toast('Use Set beside ml left for this keg');
-  d.open=Math.max(0,d.open+n);
-  d.stockMl=d.open*Ml(d);
-  document.getElementById('op-'+id).textContent=d.open;
-  save(); enqueue('set_open',{drink:id,open:d.open}); renderStock(); renderDash();
+  const goods=isGoods(d), dp=goods?1000:1;
+  const step=goods?Math.min(0.25,1/Math.max(1,Ml(d))):1;
+  const cur=Math.max(0,Math.round((roundLeft(d)||0)/Math.max(1,Ml(d))*dp)/dp);
+  const next=Math.max(0,Math.round((cur+n*step)*dp)/dp);
+  const delta=Math.round((next-cur)*dp)/dp;
+  if(!delta) return;
+  const t=Date.now();
+  if(delta>0){
+    d.stockMl=(roundLeft(d)||0)+delta*Ml(d);
+    DB.restocks.push({drink:id,qty:delta,t});
+    enqueue('restock',{drink:id,qty:delta,t,keg:0});
+  }else{
+    const taken=-delta;
+    d.stockMl=Math.max(0,(roundLeft(d)||0)-taken*Ml(d));
+    DB.waste.push({drink:id,qty:taken,t});
+    enqueue('waste',{drink:id,qty:taken,t,keg:0});
+  }
+  save(); renderStock(); renderDash(); renderSell();
 }
 function setPrice(id,k,v){
   const d=DB.drinks.find(x=>x.id===id); if(!d) return;
