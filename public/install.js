@@ -27,12 +27,12 @@
     if (miui) {
       return {
         key: 'miui',
-        title: 'Install Kaunta on Xiaomi / Redmi',
-        note: 'Xiaomi’s built-in browser sometimes hides the PWA install option. Chrome is the most reliable choice on Redmi, Note and POCO phones.',
+        title: 'Install Kaunta on Redmi / Xiaomi',
+        note: 'On some Redmi A05 phones Chrome hides “Install app”. That is a phone/Chrome limitation, not Kaunta. The home-screen shortcut still works.',
         steps: [
-          'Open the browser menu — the ⋮ button at the bottom or top-right.',
-          'Tap “Add to Home screen”. Some MIUI browsers call it “Add shortcut” or “Add to desktop”.',
-          'Confirm “Add”. If that option is missing, use the Chrome button below.'
+          'In Chrome tap the ⋮ menu. If you see “Install app”, tap it.',
+          'If there is no install option, tap “Share”, then “Add to Home screen”.',
+          'Confirm “Add”. If the icon lands in the app drawer, drag it to your home screen.'
         ]
       };
     }
@@ -99,11 +99,11 @@
     return {
       key: 'generic',
       title: 'Install Kaunta on this phone',
-      note: 'Every mainstream phone browser can add Kaunta to the home screen. Use Chrome if your browser menu has no install option.',
+      note: 'Every mainstream phone browser can add Kaunta to the home screen. If your menu has no install option, use “Share → Add to Home screen”.',
       steps: [
         'Open your browser menu — usually ⋮ or ≡.',
-        'Tap “Add to Home screen” or “Install app”.',
-        'Confirm “Add”, then open Kaunta from your home screen.'
+        'Tap “Install app” if it is there; otherwise tap “Share → Add to Home screen”.',
+        'Confirm “Add”, then open Kaunta from your home screen or app drawer.'
       ]
     };
   }
