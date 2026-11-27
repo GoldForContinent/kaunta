@@ -7,6 +7,9 @@ npm-debug.log*
 .workerlogs/
 .env
 
+# Local database exports (contain production PII)
+exports/
+
 # OS cruft
 Thumbs.db
 .DS_Store
